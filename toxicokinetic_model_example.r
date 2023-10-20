@@ -1,6 +1,6 @@
 ## -------------------------------------------------------
 ##
-## A toy example with a simple one-compartment toxicokinetic model
+## A toy example with a simple one-compartment toxicoknetic model
 ##
 ## October 18, 2023
 ## Sandrine Charles, Roman Ashauer, Andreas Scheidegger
@@ -8,7 +8,7 @@
 ## -------------------------------------------------------
 
 library(ggplot2)
-library(maxLik)            # maximum likelihood estimation
+library(maxLik)            # maximum likelihood estimation 
 library(adaptMCMC)         # MCMC sampling algorithm
 
 ## Notes
@@ -49,11 +49,14 @@ LOQ <- 6
 ## 2) define model
 
 ## 2.1) --- the deterministic model with two parameters
+##
+## k.u: uptake rate
+## k.e: elimination rate
 
-bioacc <- function(parameters,
-                   C_water,  # exposure concentration water
-                   tc,       # duration of the accumulation phase [days]
-                   tsim){    # simulation times
+bioacc <- function(parameters, # [k.u, k.e]
+                   C_water,    # exposure concentration water
+                   tc,         # duration of the accumulation phase [days]
+                   tsim){      # simulation times
 
     k.u <- parameters[1]
     k.e <- parameters[2]
