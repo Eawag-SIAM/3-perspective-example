@@ -60,7 +60,7 @@ k.e
 ## -- Idea I
 ## Use log normal with a mean of the above computation
 ## and relative standard deviation of one order of magnitude
-## --> give us a extremely skewd distribution
+## --> give us a extremely skewed distribution
 
 mean <- k.u
 sd <- 10*mean

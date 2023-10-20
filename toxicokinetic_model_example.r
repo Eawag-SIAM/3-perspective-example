@@ -78,10 +78,11 @@ bioacc <- function(parameters, # [k.u, k.e]
 ## 3) Perspective 1
 
 
-## Paraemters form literature !!!CHECK!!!
-ku.mean <- 92
-ke.mean <-  0.815
-parameters.P1 <- c(ku.mean, ke.mean)
+## Parameters from literature, see file "prior_calculations.r"
+parameters.P1 <- c(k.u = 112.798,
+                   k.e = 0.00296)
+
+
 C_water <- unique(df$Cwater)
 tc <- 1 # duration of the accumulation phase
 tsim <- seq(0, 7.5, length=111)
