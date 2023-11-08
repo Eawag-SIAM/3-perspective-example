@@ -32,6 +32,8 @@ gamma.0 <- 200      # Water absorption–excretion coefficient [gf^kappa/d]
 ## source: http://npic.orst.edu/factsheets/archive/malatech.html
 K.OW <- 10^(2.75)   # Octanol–water partition ratio of Malathion [-]
 
+# https://pubchem.ncbi.nlm.nih.gov/compound/Malathion#section=LogP
+# https://en.wikipedia.org/wiki/Malathion
 
 ## -----------
 ## Uptake rate k.u. Bases on Eq(5) of Hendriks et al.
@@ -82,6 +84,7 @@ abline(v=k.u, col=2)
 ## -- Idea II
 ## Assume k.u is unbiased normal in the log space.
 ## -> a bit less skewed. median (k.u) = 10^log(mean k.u) 
+## -> take this options
 
 meanlog = log10(k.u) / log10(exp(1))
 sdlog = log10(10) / log10(exp(1)) # one order of magnitude (10 base)
@@ -96,5 +99,16 @@ hist(log10(x))
 abline(v=log10(k.u), col=2)
 
 plot(function(x) dlnorm(x, meanlog, sdlog), xlim=c(0, 500), n=301)
+plot(function(x) dlnorm(x, meanlog, sdlog), xlim=c(0, 500), log="x", n=301)
 abline(v=k.u, col=2)
 
+
+
+para <- 10^(log10(parameters.P1) + rnorm(2))
+
+xx <- 10^(rnorm(10000, log10(k.u), 1))
+par(mfrow=c(2,1))
+hist(x)
+hist(xx)
+
+qqplot(x, xx)

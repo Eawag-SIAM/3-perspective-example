@@ -1,6 +1,6 @@
 ## -------------------------------------------------------
 ##
-## A toy example with a simple one-compartment toxicoknetic model
+## A toy example with a simple one-compartment toxicokinetic model
 ##
 ## October 18, 2023
 ## Sandrine Charles, Roman Ashauer, Andreas Scheidegger
@@ -14,7 +14,7 @@ library(adaptMCMC)         # MCMC sampling algorithm
 ## Notes
 ## -----
 ## 
-## - We use now the raw data from Ashauer 2010. No sure what 'samping_date' is.
+## - We use now the raw data from Ashauer 2010. No sure what 'sampling_date' is.
 ##   (not the same as 'replicate' in Sandrins data set)
 ##
 ## - We use LOQ/2. This is ok for here but statistically not 100% clean.
@@ -24,6 +24,20 @@ library(adaptMCMC)         # MCMC sampling algorithm
 
 pdf("plot.pdf", width=9)
 
+## ---------------------------------
+## 0) Helper function
+
+## Compute the 5%, 50% and 95% interval over time given the matrix `X` containing
+## Monte Carlo simulations of the model output. Each row of X holds one a model output for
+## times 'tsim'
+compute.intervals <- function(X, tsim){
+    intervals <-  t(apply(X, 2,
+                          function(x){quantile(x, probs=c(0.05, 0.5, 0.95))}))
+    intervals <- as.data.frame(intervals)
+    colnames(intervals) <- c("p05", "p50", "p95")
+    intervals$time <- tsim
+    intervals
+}
 
 ## ---------------------------------
 ## 1) import data
@@ -100,6 +114,36 @@ ggplot(simu.mean, aes(time, conc)) +
     ## Add observed data
     geom_point(data = df, aes(time, Cinternal)) +
     ggtitle("Perspective 1")
+
+
+
+## Sample parameter uncertainty
+## Based on Figure 2 of Hendriks et al. (2001) we assume a standard deviation
+## of 1 on the log10 scale.
+n <- 10000
+X.para <- matrix(NA, ncol=length(tsim), nrow=n)
+for(i in 1:n){
+
+    para <- c(10^(rnorm(1, log10(parameters.P1[1]), 1)),
+              10^(rnorm(1, log10(parameters.P1[2]), 1)))
+    
+    X.para[i,] <- bioacc(para, C_water, tc, tsim)$conc
+}
+
+## compute quantiles
+intervals.para <- compute.intervals(X.para, tsim)
+
+## Plot intervals
+ggplot(intervals.para) +
+    geom_line(aes(x=time, y=p50), col = "orange", linewidth = 1.5) +
+    geom_ribbon(aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
+    xlab("Time (hours)") +
+    ylab("Internal concentration") +
+    geom_vline(xintercept = 1, linetype="dashed") +    
+    ## Add observed data
+    geom_point(data = df, aes(time, Cinternal)) +
+    ## scale_y_continuous(trans='log10') +
+    ggtitle("Perspective 1 - 90% parameter uncertainty interval")
 
 
 
@@ -217,9 +261,9 @@ log.post.gamma <- function(theta, data, ...) {
 
 pp.normal <- MCMC(log.post.normal, n=15000,
                   init=c(k.u=90, k.e=1, log.sd=2),
-           scale = c(100, 1, 1),
-           acc.rate=0.2,
-           data=df, LOQ = LOQ)
+                  scale = c(100, 1, 1),
+                  acc.rate=0.2,
+                  data=df, LOQ = LOQ)
 post.normal <- convert.to.coda(pp.normal)
 
 plot(post.normal)                              # whole chain
@@ -234,8 +278,8 @@ pairs(pp.normal$samples, col=gray(0, alpha=0.01))
 
 pp.gamma <- MCMC(log.post.gamma, n=15000,
                  init=c(k.u=90, k.e=1, log.sd=2),
-           scale = c(100, 1, 1),
-           data=df, acc.rate=0.2)
+                 scale = c(100, 1, 1),
+                 data=df, acc.rate=0.2)
 post.gamma <- convert.to.coda(pp.gamma)
 
 plot(post.gamma)                              # whole chain
@@ -265,17 +309,8 @@ for(i in 1:n){
 }
 
 ## compute quantiles
-intervals.para <-  t(apply(X.para, 2,
-                           function(x){quantile(x, probs=c(0.05, 0.5, 0.95))}))
-intervals.para <- as.data.frame(intervals.para)
-colnames(intervals.para) <- c("p05", "p50", "p95")
-intervals.para$time <- tsim
-
-intervals.total <-  t(apply(X.total, 2,
-                            function(x){quantile(x, probs=c(0.05, 0.5, 0.95))}))
-intervals.total <- as.data.frame(intervals.total)
-colnames(intervals.total) <- c("p05", "p50", "p95")
-intervals.total$time <- tsim
+intervals.para <- compute.intervals(X.para, tsim)
+intervals.total <- compute.intervals(X.total, tsim)
 
 
 ## Plot intervals
@@ -314,17 +349,8 @@ for(i in 1:n){
 }
 
 ## compute quantiles
-intervals.para <-  t(apply(X.para, 2,
-                           function(x){quantile(x, probs=c(0.05, 0.5, 0.95))}))
-intervals.para <- as.data.frame(intervals.para)
-colnames(intervals.para) <- c("p05", "p50", "p95")
-intervals.para$time <- tsim
-
-intervals.total <-  t(apply(X.total, 2,
-                            function(x){quantile(x, probs=c(0.05, 0.5, 0.95))}))
-intervals.total <- as.data.frame(intervals.total)
-colnames(intervals.total) <- c("p05", "p50", "p95")
-intervals.total$time <- tsim
+intervals.para <- compute.intervals(X.para, tsim)
+intervals.total <- compute.intervals(X.total, tsim)
 
 
 ## Plot credibility intervals
