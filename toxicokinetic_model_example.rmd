@@ -1,49 +1,48 @@
-## -------------------------------------------------------
-##
-## A toy example with a simple one-compartment toxicokinetic model
-##
-## November  8, 2023
-## Sandrine Charles, Roman Ashauer, Andreas Scheidegger
-##
-## -------------------------------------------------------
+---
+title: "The three perspectives demonstrated on a toy example"
+author: "Sandrine Charles, Roman Ashauer, Andreas Scheidegger"
+date: "August 11, 2025"
+output: html_document
+---
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.width=9)
+knitr::opts_chunk$set(warning = FALSE)
 library(ggplot2)
-library(maxLik)            # maximum likelihood estimation 
+library(maxLik)            # maximum likelihood estimation
 library(adaptMCMC)         # MCMC sampling algorithm
+```
+
+## Introduction
+
+This document provides an analysis using a one-compartment toxicokinetic model. The dataset used comes from *Gammarus pulex* exposed to Malathion, as reported by Ashauer (2010). The analysis explores three different perspectives: using pre-defined parameters, performing maximum likelihood estimation (MLE), and incorporating Bayesian approaches to account for parameter uncertainty.
 
 ## Notes
-## -----
-## 
-## - We use now the raw data from Ashauer 2010. No sure what 'sampling_date' is.
-##   (not the same as 'replicate' in Sandrins data set)
-##
-## - We use LOQ/2. This is ok for here but statistically not 100% clean.
-##
-## - Priors are based on Hendriks et al. (2001). 
 
+- The dataset used is from Ashauer 2010. The 'sampling_date' column does not directly correspond to 'replicate' in another dataset by Sandrine, but it will be treated as a factor here.
+- We use Limit of Quantification divided by 2 for below-detection data, which is a common but not entirely correct approach.
+- The priors are based on Hendriks et al. (2001), which are relevant to the parameters of the toxicokinetic model.
 
-pdf("plot.pdf", width=9)
+## Helper Function
 
-## ---------------------------------
-## 0) Helper function
+This function computes the 5%, 50%, and 95% intervals over time, based on Monte Carlo simulations of the model output. These intervals help us understand the range of possible outcomes from the model.
 
-## Compute the 5%, 50% and 95% interval over time given the matrix `X` containing
-## Monte Carlo simulations of the model output. Each row of X holds one a model output for
-## times 'tsim'
+```{r}
 compute.intervals <- function(X, tsim){
-    intervals <-  t(apply(X, 2,
-                          function(x){quantile(x, probs=c(0.05, 0.5, 0.95))}))
+    intervals <-  t(apply(X, 2, function(x){quantile(x, probs=c(0.05, 0.5, 0.95))}))
     intervals <- as.data.frame(intervals)
     colnames(intervals) <- c("p05", "p50", "p95")
     intervals$time <- tsim
     intervals
 }
+```
 
-## ---------------------------------
-## 1) import data
+## Import Data
 
-## Data set on *Gammarus pulex* exposed to Malathion,  Ashauer (2010).
-df <- read.table("data_Malathion_Ashauer_2010.csv", header = TRUE, sep = ",")
+Here, we load the dataset which contains measurements of internal concentrations in *Gammarus pulex* over time. The dataset is then visualized to understand the time course of internal concentration.
+
+```{r}
+df <- read.table("data/data_Malathion_Ashauer_2010.csv", header = TRUE, sep = ",")
 df$sampling_date <- as.factor(df$sampling_date)
 
 ggplot(data = df, aes(x = time, y = Cinternal, col=sampling_date)) +
@@ -52,325 +51,248 @@ ggplot(data = df, aes(x = time, y = Cinternal, col=sampling_date)) +
     xlab("Time (days)") +
     ylab("Internal measured concentration (picomol/g wet weight)") +
     geom_vline(xintercept = 1, linetype="dashed")
+```
 
-
+We also define the limit of quantification (LOQ)
+```{r}
 ## Limit of detection nmol/kg(wet weight)
 ## from Table 5 in SI of Ashaue et al (2010)
 LOQ <- 6
 
+```
+## Define Deterministic Model
 
-## ---------------------------------
-## 2) define model
+We define a deterministic toxicokinetic model with two parameters: uptake rate ($k_u$) and elimination rate ($k_e$). This model predicts the internal concentration based on the exposure concentration in water and the simulation times.
 
-## 2.1) --- the deterministic model with two parameters
-##
-## k.u: uptake rate
-## k.e: elimination rate
-
-bioacc <- function(parameters, # [k.u, k.e]
-                   C_water,    # exposure concentration water
-                   tc,         # duration of the accumulation phase [days]
-                   tsim){      # simulation times
-
+```{r}
+bioacc <- function(parameters, C_water, tc, tsim){
     k.u <- parameters[1]
     k.e <- parameters[2]
-    
-    ## accumlation phase
+
     tacc <- tsim[tsim <= tc]
     Cacc <- k.u*C_water*(1 - exp(-k.e*tacc))/k.e
-    
+
     tdep <- tsim[tsim > tc]
     Cdep <- k.u*C_water*(exp(k.e*(tc - tdep)) - exp(-k.e*tdep))/k.e
-    
+
     result <- data.frame(time = c(tacc, tdep),
                          conc = c(Cacc, Cdep))
     return(result)
 }
+```
 
+## Perspective 1: Pre-defined Parameters
 
-## ---------------------------------
-## 3) Perspective 1
+Using pre-defined parameters based on Hendriks et al. (2001), we run the model to predict internal concentrations and compare them to the observed data. We also sample parameter uncertainty and plot the 90% prediction interval.
 
-
-## Parameters based on Hendriks et al. (2001), see file "prior_calculations.r"
-parameters.P1 <- c(k.u = 112.798,
-                   k.e = 0.00296)
-
-
+```{r}
+parameters.P1 <- c(k.u = 112.798, k.e = 0.00296)
 C_water <- unique(df$Cwater)
-tc <- 1 # duration of the accumulation phase
+tc <- 1
 tsim <- seq(0, 7.5, length=111)
 
-
-## run model
 simu.mean <- bioacc(parameters.P1, C_water, tc, tsim)
 
-## Plot model fit
 ggplot(simu.mean, aes(time, conc)) +
     geom_line(col = "orange", linewidth = 1.5) +
     xlab("Time (hours)") +
     ylab("Internal predicted concentrations") +
-    geom_vline(xintercept = 1, linetype="dashed") +    
-    ## Add observed data
+    geom_vline(xintercept = 1, linetype="dashed") +
     geom_point(data = df, aes(time, Cinternal)) +
     ggtitle("Perspective 1")
 
-
-
-## Sample parameter uncertainty
-## Based on Figure 2 of Hendriks et al. (2001) we assume a standard deviation
-## of 1 on the log10 scale.
 n <- 10000
 X.para <- matrix(NA, ncol=length(tsim), nrow=n)
 for(i in 1:n){
-
     para <- c(10^(rnorm(1, log10(parameters.P1[1]), 1)),
               10^(rnorm(1, log10(parameters.P1[2]), 1)))
-    
     X.para[i,] <- bioacc(para, C_water, tc, tsim)$conc
 }
 
-## compute quantiles
 intervals.para <- compute.intervals(X.para, tsim)
 
-## Plot intervals
 ggplot(intervals.para) +
     geom_line(aes(x=time, y=p50), col = "orange", linewidth = 1.5) +
     geom_ribbon(aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
     xlab("Time (hours)") +
     ylab("Internal concentration") +
-    geom_vline(xintercept = 1, linetype="dashed") +    
-    ## Add observed data
+    geom_vline(xintercept = 1, linetype="dashed") +
     geom_point(data = df, aes(time, Cinternal)) +
-    ## scale_y_continuous(trans='log10') +
     ggtitle("Perspective 1 - 90% parameter uncertainty interval")
+```
 
+## Perspective 2: Maximum Likelihood Estimation (MLE)
 
+We estimate the parameters by maximizing the likelihood of the observed data, assuming normal and gamma-distributed errors. We then fit the model using these MLE parameters.
 
-## ---------------------------------
-## 4) Perspective 2
-
-## 4.1) --- log likelihood functions p(D|theta) assuming iid normal errors
-##          theta_3 is the *log* of standard deviation of the error term
+```{r}
 log.ll.normal <- function(theta, data, LOQ=6) {
     conc.pred <- bioacc(theta, unique(data$Cwater), tc = 1, tsim = data$time)$conc
-    
-    ## replace 0 observations with 1/2 LOQ
     obs <- ifelse(data$Cinternal==0, LOQ/2, data$Cinternal)
-    
     sum(dnorm(obs, mean=conc.pred, sd=exp(theta[3]), log=TRUE))
 }
 
-log.ll.normal(c(k.u=90, k.e=0.8, log.sd=log(1)), df)
-
-mle = maxLik(log.ll.normal,
-             start=c(k.u=90, k.e=1, log.sd=log(1)),
-             data=df,
-             LOQ = LOQ)
-
+mle = maxLik(log.ll.normal, start=c(k.u=90, k.e=1, log.sd=log(1)), data=df, LOQ = LOQ)
 summary(mle)
 
-
-## run model
 parameters.P2 <- mle$estimate
 simu.mean <- bioacc(parameters.P2, C_water, tc, tsim)
 
-## Plot model fit
 ggplot(simu.mean, aes(time, conc)) +
     geom_line(col = "orange", linewidth = 1.5) +
     xlab("Time (hours)") +
     ylab("Internal predicted concentrations") +
-    geom_vline(xintercept = 1, linetype="dashed") +    
-    ## Add observed data
+    geom_vline(xintercept = 1, linetype="dashed") +
     geom_point(data = df, aes(time, Cinternal)) +
     ggtitle("MLE fit for normal errors")
+```
 
+We repeat the above process for gamma-distributed errors.
 
-
-## 4.2) --- log likelihood functions p(D|theta) assuming iid Gamma distributed
-##          errors. The deterministic model determines the mode of the distribtion,
-##          theta_3 the *log* of standard deviation of the error term.
+```{r}
 log.ll.gamma <- function(theta, data, LOQ=6) {
-
     mode <- bioacc(theta, unique(data$Cwater), tc = 1, tsim = data$time)$conc
     sd <- exp(theta[3])
-
-    ## calculate parameters of gamma distributions
     scale <- 0.5*(sqrt(4*sd^2+mode^2) - mode)
     shape <- mode/scale + 1
-
-    ## replace 0 observations with 1/2 LOQ
     obs <- ifelse(data$Cinternal==0, LOQ/2, data$Cinternal)
-    
     sum(dgamma(obs, shape=shape, scale=scale, log=TRUE))
 }
 
-
-mle = maxLik(log.ll.gamma,
-             start=c(k.u=80, k.e=0.8, log.sd=log(1)),
-             data=df,
-             LOQ=LOQ,
-             method="BFGS")
+mle = maxLik(log.ll.gamma, start=c(k.u=80, k.e=0.8, log.sd=log(1)), data=df, LOQ=LOQ, method="BFGS")
 summary(mle)
 
-
-## run model
 parameters.P2 <- mle$estimate
 simu.mean <- bioacc(parameters.P2, C_water, tc, tsim)
 
-## Plot model fit
 ggplot(simu.mean, aes(time, conc)) +
     geom_line(col = "orange", linewidth = 1.5) +
     xlab("Time (hours)") +
     ylab("Internal predicted concentrations") +
-    geom_vline(xintercept = 1, linetype="dashed") +    
-    ## Add observed data
+    geom_vline(xintercept = 1, linetype="dashed") +
     geom_point(data = df, aes(time, Cinternal)) +
     ggtitle("MLE fit for gamma errors")
+```
 
+## Perspective 3: Bayesian Inference
 
+We incorporate prior knowledge into the model using a Bayesian approach, which allows us to sample from the posterior distribution of the parameters and estimate the uncertainty in our predictions.
 
+### Log-Prior Definition
 
-## ---------------------------------
-## 5) Perspective 3
+The priors for the parameters are based on Hendriks et al. (2001).
 
-## Priors are based on Hendriks et al. (2001), see file "prior_calculations.r"
-## 5.1) --- define log prior 
+```{r}
 log.prior <- function(theta) {
     k.u <- 112.798
     k.e <- 0.00296
-    
+
     meanlog.k.u = log10(k.u) / log10(exp(1))
     meanlog.k.e = log10(k.e) / log10(exp(1))
-    sdlog = log10(10) / log10(exp(1)) 
-    
+    sdlog = log10(10) / log10(exp(1))
+
     dlnorm(theta[1], meanlog.k.u, sdlog, log=TRUE) +
         dlnorm(theta[2], meanlog.k.e, sdlog, log=TRUE) +
-        dnorm(theta[3], 2, 2, log=TRUE) 
+        dnorm(theta[3], 2, 2, log=TRUE)
 }
+```
 
+### Posterior Distribution
 
-## 5.2) --- define function proportional to posterior distribution
-##          p(theta | D) = p(D|theta) * p(theta) / p(D)
+We define functions proportional to the posterior distribution, incorporating both likelihood and prior information.
 
-log.post.normal <- function(theta, data, ...) {    
+```{r}
+log.post.normal <- function(theta, data, ...) {
     log.ll.normal(theta, data, ...) + log.prior(theta)
 }
 
-log.post.gamma <- function(theta, data, ...) {    
+log.post.gamma <- function(theta, data, ...) {
     log.ll.gamma(theta, data, ...) + log.prior(theta)
 }
+```
 
+### MCMC Sampling
 
+We sample from the posterior distribution using a Markov Chain Monte Carlo (MCMC) method. This helps us quantify the uncertainty in the model predictions.
 
-
-## 5.3.1) --- sample from posterior with normal error
-
+```{r}
 pp.normal <- MCMC(log.post.normal, n=15000,
-                  init=c(k.u=90, k.e=1, log.sd=2),
-                  scale = c(100, 1, 1),
-                  acc.rate=0.2,
+                  init = c(k.u=90, k.e=1, log.sd=2),
+                  scale = c(100, 1, 1), acc.rate=0.2,
+                  showProgressBar = FALSE,
                   data=df, LOQ = LOQ)
 post.normal <- convert.to.coda(pp.normal)
 
 plot(post.normal)                              # whole chain
 
-## remove burn-in, and plot posterior distribution
 plot(window(post.normal, start=5000))
 
 pairs(pp.normal$samples, col=gray(0, alpha=0.01))
 
-
-## 5.3.2) --- sample from posterior with Gamma error
-
 pp.gamma <- MCMC(log.post.gamma, n=15000,
-                 init=c(k.u=90, k.e=1, log.sd=2),
+                 init = c(k.u=90, k.e=1, log.sd=2),
                  scale = c(100, 1, 1),
+                 showProgressBar = FALSE,
                  data=df, acc.rate=0.2)
 post.gamma <- convert.to.coda(pp.gamma)
 
 plot(post.gamma)                              # whole chain
 
-## remove burn-in, and plot posterior distribution
 plot(window(post.gamma, start=5000))
 
 pairs(pp.gamma$samples, col=gray(0, alpha=0.01))
+```
 
+### Credibility Intervals
 
+Finally, we plot the 90% credibility intervals for normal and gamma errors, incorporating both parameter and total uncertainty.
 
-## 5.4.1) --- plot credibility intervals for normal errors
-
-## sample from posterior
+```{r}
 n <- 10000
 X.para <- X.total <- matrix(NA, ncol=length(tsim), nrow=n)
 for(i in 1:n){
-
     idx <- sample(1:nrow(pp.normal$samples),1)
     para <- pp.normal$samples[idx,]
-    
     X.para[i,] <- bioacc(para, C_water, tc, tsim)$conc
-
     sd <- exp(para[3])
     X.total[i,] <- rnorm(length(tsim), mean=X.para[i,], sd=sd)
-
 }
 
-## compute quantiles
 intervals.para <- compute.intervals(X.para, tsim)
 intervals.total <- compute.intervals(X.total, tsim)
 
-
-## Plot intervals
 ggplot(intervals.para) +
     geom_line(aes(x=time, y=p50), col = "orange", linewidth = 1.5) +
     geom_ribbon(aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
     geom_ribbon(data=intervals.total, aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
     xlab("Time (hours)") +
     ylab("Internal concentration") +
-    geom_vline(xintercept = 1, linetype="dashed") +    
-    ## Add observed data
+    geom_vline(xintercept = 1, linetype="dashed") +
     geom_point(data = df, aes(time, Cinternal)) +
     ggtitle("90% parameter and total uncertainty interval with normal errors")
 
-
-
-## 5.4.2) --- plot credibility intervals for gamma errors
-
-## sample from posterior
 n <- 10000
 X.para <- X.total <- matrix(NA, ncol=length(tsim), nrow=n)
 for(i in 1:n){
-
     idx <- sample(1:nrow(pp.gamma$samples),1)
     para <- pp.gamma$samples[idx,]
-    
     X.para[i,] <- mode <- bioacc(para, C_water, tc, tsim)$conc
     sd <- exp(para[3])
-
-    ## calculate parmeters of gamma distributions
     scale <- 0.5*(sqrt(4*sd^2+mode^2) - mode)
     shape <- mode/scale + 1
-    
     X.total[i,] <- rgamma(length(tsim), scale=scale, shape=shape)
-
 }
 
-## compute quantiles
 intervals.para <- compute.intervals(X.para, tsim)
 intervals.total <- compute.intervals(X.total, tsim)
 
-
-## Plot credibility intervals
 ggplot(intervals.para) +
     geom_line(aes(x=time, y=p50), col = "orange", linewidth = 1.5) +
     geom_ribbon(aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
     geom_ribbon(data=intervals.total, aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
     xlab("Time (hours)") +
     ylab("Internal concentration") +
-    geom_vline(xintercept = 1, linetype="dashed") +    
-    ## Add observed data
+    geom_vline(xintercept = 1, linetype="dashed") +
     geom_point(data = df, aes(time, Cinternal)) +
     ggtitle("90% parameter and total uncertainty interval with gamma errors")
-
-
-dev.off()
+```
