@@ -2,7 +2,7 @@
 ##
 ## A toy example with a simple one-compartment toxicokinetic model
 ##
-## October 18, 2023
+## November  8, 2023
 ## Sandrine Charles, Roman Ashauer, Andreas Scheidegger
 ##
 ## -------------------------------------------------------
@@ -19,7 +19,7 @@ library(adaptMCMC)         # MCMC sampling algorithm
 ##
 ## - We use LOQ/2. This is ok for here but statistically not 100% clean.
 ##
-## - TODO: compute independent priors based on Romans instuctions
+## - Priors are based on Hendriks et al. (2001). 
 
 
 pdf("plot.pdf", width=9)
@@ -92,7 +92,7 @@ bioacc <- function(parameters, # [k.u, k.e]
 ## 3) Perspective 1
 
 
-## Parameters from literature, see file "prior_calculations.r"
+## Parameters based on Hendriks et al. (2001), see file "prior_calculations.r"
 parameters.P1 <- c(k.u = 112.798,
                    k.e = 0.00296)
 
@@ -234,11 +234,18 @@ ggplot(simu.mean, aes(time, conc)) +
 ## ---------------------------------
 ## 5) Perspective 3
 
-
-## 5.1) --- define log prior !!!CHECK!!!
+## Priors are based on Hendriks et al. (2001), see file "prior_calculations.r"
+## 5.1) --- define log prior 
 log.prior <- function(theta) {
-    dnorm(theta[1], 90, 10, log=TRUE) +
-        dunif(theta[2], 0, 2, log=TRUE) +
+    k.u <- 112.798
+    k.e <- 0.00296
+    
+    meanlog.k.u = log10(k.u) / log10(exp(1))
+    meanlog.k.e = log10(k.e) / log10(exp(1))
+    sdlog = log10(10) / log10(exp(1)) 
+    
+    dlnorm(theta[1], meanlog.k.u, sdlog, log=TRUE) +
+        dlnorm(theta[2], meanlog.k.e, sdlog, log=TRUE) +
         dnorm(theta[3], 2, 2, log=TRUE) 
 }
 
