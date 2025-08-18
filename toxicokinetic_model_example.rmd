@@ -132,7 +132,7 @@ log.ll.normal <- function(theta, data, LOQ=6) {
     sum(dnorm(obs, mean=conc.pred, sd=exp(theta[3]), log=TRUE))
 }
 
-mle = maxLik(log.ll.normal, start=c(k.u=90, k.e=1, log.sd=log(1)), data=df, LOQ = LOQ)
+mle = maxLik(log.ll.normal, start=c(k.u=90, k.e=1, log.sd=log(1)), data=df, LOQ = LOQ, method="NM")
 summary(mle)
 
 parameters.P2 <- mle$estimate
@@ -159,7 +159,7 @@ log.ll.gamma <- function(theta, data, LOQ=6) {
     sum(dgamma(obs, shape=shape, scale=scale, log=TRUE))
 }
 
-mle = maxLik(log.ll.gamma, start=c(k.u=80, k.e=0.8, log.sd=log(1)), data=df, LOQ=LOQ, method="BFGS")
+mle = maxLik(log.ll.gamma, start=c(k.u=80, k.e=0.8, log.sd=log(1)), data=df, LOQ=LOQ, method="NM")
 summary(mle)
 
 parameters.P2 <- mle$estimate
@@ -173,6 +173,112 @@ ggplot(simu.mean, aes(time, conc)) +
     geom_point(data = df, aes(time, Cinternal)) +
     ggtitle("MLE fit for gamma errors")
 ```
+
+### Bootstrapping
+
+The  maximum likelihood
+estimation computes confidence intervals of the parameters  based on large sample size
+approximation. Bootstrapping avoids this approximations and also offers
+a straight-forward way to propagate the parameter uncertainty through
+the model to compute prediction intervals.
+
+```{r}
+# run non-parametric bootstrap
+
+M <- 3000
+thetas.boot <- matrix(NA, ncol=3, nrow=M)
+for(i in 1:M){
+    idx <- sample(1:nrow(df), nrow(df), replace=TRUE)
+    data.boot <- df[idx,]
+    fit = maxLik::maxLik(log.ll.normal,
+                         start=c(k.u=90, k.e=1, log.sd=log(1)),
+                         data=data.boot, LOQ = LOQ,
+                         method = "NM",
+                         constraints = list(ineqA=diag(3), ineqB=c(0,0,5)) #  A %*% theta + B > 0
+                         )
+
+    if(fit$code <= 2){ # check for convergence
+        thetas.boot[i,] <- coef(fit)
+    }
+}
+
+pairs(thetas.boot, col=gray(0, alpha=0.1))
+
+## propagate parameters through models
+X.para <- X.total <- matrix(NA, ncol=length(tsim), nrow=M)
+for(i in 1:M){
+    para <- thetas.boot[i,]
+    X.para[i,] <- bioacc(para, C_water, tc, tsim)$conc
+    sd <- exp(para[3])
+    X.total[i,] <- rnorm(length(tsim), mean=X.para[i,], sd=sd)
+}
+
+intervals.para <- compute.intervals(X.para, tsim)
+intervals.total <- compute.intervals(X.total, tsim)
+
+ggplot(intervals.para) +
+    geom_line(aes(x=time, y=p50), col = "orange", linewidth = 1.5) +
+    geom_ribbon(aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
+    geom_ribbon(data=intervals.total, aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
+    xlab("Time (hours)") +
+    ylab("Internal concentration") +
+    geom_vline(xintercept = 1, linetype="dashed") +
+    geom_point(data = df, aes(time, Cinternal)) +
+    ggtitle("Bootstrapped 90% confidence and prediction intervals with normal errors")
+
+```
+
+
+
+```{r}
+# run non-parametric bootstrap
+
+M <- 3000
+thetas.boot.g <- matrix(NA, ncol=3, nrow=M)
+for(i in 1:M){
+    idx <- sample(1:nrow(df), nrow(df), replace=TRUE)
+    data.boot <- df[idx,]
+    fit = maxLik::maxLik(log.ll.gamma,
+                         start=c(k.u=90, k.e=1, log.sd=log(1)),
+                         data=data.boot, LOQ = LOQ,
+                         method = "NM",
+                         constraints = list(ineqA=diag(3), ineqB=c(0,0,5)) #  A %*% theta + B > 0
+                         )
+
+    if(fit$code <= 2){ #check for convergence
+        thetas.boot.g[i,] <- coef(fit)
+    }
+}
+
+pairs(thetas.boot.g, col=gray(0, alpha=0.1))
+
+## propagate parameters through models
+X.para.g <- X.total.g <- matrix(NA, ncol=length(tsim), nrow=M)
+for(i in 1:M){
+    para <- thetas.boot.g[i,]
+    X.para.g[i,] <- mode <- bioacc(para, C_water, tc, tsim)$conc
+    sd <- exp(para[3])
+    scale <- 0.5*(sqrt(4*sd^2+mode^2) - mode)
+    shape <- mode/scale + 1
+    X.total.g[i,] <- rgamma(length(tsim), scale=scale, shape=shape)
+}
+
+intervals.para.g <- compute.intervals(X.para.g, tsim)
+intervals.total.g <- compute.intervals(X.total.g, tsim)
+
+ggplot(intervals.para.g) +
+    geom_line(aes(x=time, y=p50), col = "orange", linewidth = 1.5) +
+    geom_ribbon(aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
+    geom_ribbon(data=intervals.total.g, aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
+    xlab("Time (hours)") +
+    ylab("Internal concentration") +
+    geom_vline(xintercept = 1, linetype="dashed") +
+    geom_point(data = df, aes(time, Cinternal)) +
+    ggtitle("Bootstrapped 90% confidence and prediction intervals with gamma errors")
+
+```
+
+
 
 ## Perspective 3: Bayesian Inference
 
