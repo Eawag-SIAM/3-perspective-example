@@ -1,8 +1,13 @@
 ---
 title: "The three perspectives demonstrated on a toy example"
 author: "Sandrine Charles, Roman Ashauer, Andreas Scheidegger"
-date: "August 11, 2025"
-output: html_document
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    toc_float: true
+    number_sections: false
 ---
 
 ```{r setup, include=FALSE}
@@ -15,39 +20,29 @@ library(adaptMCMC)         # MCMC sampling algorithm
 set.seed(108)
 ```
 
+# Introduction
 
-- add prior, posterior, and bootstap CI
-
-## Introduction
-
-This document provides an analysis using a one-compartment toxicokinetic model. The dataset used comes from *Gammarus pulex* exposed to Malathion, as reported by Ashauer (2010). The analysis explores three different perspectives: using pre-defined parameters, performing maximum likelihood estimation (MLE), and incorporating Bayesian approaches to account for parameter uncertainty.
+This document provides an analysis using a one-compartment
+toxicokinetic model. The dataset used comes from *Gammarus pulex*
+exposed to Malathion, as reported by Ashauer (2010). The analysis
+explores three perspectives: using predefined parameters,
+performing maximum likelihood estimation (MLE), and incorporating
+Bayesian approaches to account for parameter uncertainty.
 
 ## Notes
 
-- The dataset used is from Ashauer 2010. The 'sampling_date' column does not directly correspond to 'replicate' in another dataset by Sandrine, but it will be treated as a factor here.
-- We use Limit of Quantification divided by 2 for below-detection data, which is a common but not entirely correct approach.
-- The priors are based on Hendriks et al. (2001), which are relevant to the parameters of the toxicokinetic model.
+- The dataset used is from Ashauer (2010). The `sampling_date` column
+  does not directly correspond to `replicate` in the dataset used by Sandrine.
+- We use the limit of quantification (LOQ) divided by 2 for below-detection data, which is a common but not entirely correct approach.
+- The priors are based on Hendriks et al. (2001).
 
-## Helper Function
 
-This function computes the 5%, 50%, and 95% intervals over time, based on Monte Carlo simulations of the model output. These intervals help us understand the range of possible outcomes from the model.
+### Import Data
 
-```{r}
-compute.intervals <- function(X, tsim){
-    intervals <-  t(apply(X, 2, function(x){quantile(x, probs=c(0.05, 0.5, 0.95))}))
-    intervals <- as.data.frame(intervals)
-    colnames(intervals) <- c("p05", "p50", "p95")
-    intervals$time <- tsim
-    intervals
-}
-```
-
-## Import Data
-
-Here, we load the dataset which contains measurements of internal
+We load the dataset containing measurements of internal
 concentrations in *Gammarus pulex* over time. The dataset is
-visualized to understand the time course of internal concentration
-Unfortunately we do not know which points belong to the same replica.
+visualized to understand the time course of internal concentrations.
+Unfortunately, we do not know which points belong to the same replicate.
 
 ```{r}
 df <- read.table("data/data_Malathion_Ashauer_2010.csv", header = TRUE, sep = ",")
@@ -60,18 +55,18 @@ ggplot(data = df, aes(x = time, y = Cinternal)) +
     geom_vline(xintercept = 1, linetype="dashed")
 ```
 
-We also define the limit of quantification (LOQ)
+We also define the limit of quantification (LOQ).
 ```{r}
 ## Limit of detection nmol/kg(wet weight)
-## from Table 5 in SI of Ashaue et al (2010)
+## from Table 5 in SI of Ashauer et al. (2010)
 LOQ <- 6
 ```
-## Define Deterministic Model
+# Define Deterministic Model
 
 We define a deterministic toxicokinetic model with two parameters:
 uptake rate ($k_u$) and elimination rate ($k_e$). This model predicts
 the internal concentration based on the exposure concentration in
-water and the simulation times. Note, the implementation assumes that
+water and the simulation times. Note that the implementation assumes that
 `tsim` is ordered.
 
 ```{r}
@@ -96,9 +91,28 @@ C_water <- unique(df$Cwater)     # exposure concentration
 tc <- 1                          # time until exposure ends [days]
 ```
 
-## Perspective 1: Pre-defined Parameters
+### Helper Function
 
-Using pre-defined parameters based on Hendriks et al. (2001), we run the model to predict internal concentrations and compare them to the observed data. We also sample parameter uncertainty and plot the 90% prediction interval.
+This function computes the 5%, 50%, and 95% intervals for each point
+in time using Monte Carlo simulations of the model output.
+
+```{r}
+compute.intervals <- function(X, tsim){
+    intervals <-  t(apply(X, 2, function(x){quantile(x, probs=c(0.05, 0.5, 0.95))}))
+    intervals <- as.data.frame(intervals)
+    colnames(intervals) <- c("p05", "p50", "p95")
+    intervals$time <- tsim
+    intervals
+}
+```
+
+
+# Perspective 1: Predefined Parameters
+
+Using predefined parameters based on Hendriks et al. (2001), we run
+the model to predict internal concentrations and compare them to the
+observed data. We also sample parameter uncertainty and plot the 90%
+prediction interval.
 
 ```{r}
 
@@ -118,8 +132,12 @@ ggplot(simu.mean, aes(time, conc)) +
 n <- 10000
 X.para <- matrix(NA, ncol=length(tsim), nrow=n)
 for(i in 1:n){
-    para <- c(10^(rnorm(1, log10(parameters.P1[1]), 1)),
-              10^(rnorm(1, log10(parameters.P1[2]), 1)))
+    meanlog.k.u = log10(parameters.P1['k.u']) / log10(exp(1))
+    meanlog.k.e = log10(parameters.P1['k.e']) / log10(exp(1))
+    sdlog = log10(10) / log10(exp(1))
+    para <- c(rlnorm(1, meanlog.k.u, sdlog),
+              rlnorm(1, meanlog.k.e, sdlog))
+
     X.para[i,] <- bioacc(para, C_water, tc, tsim)$conc
 }
 
@@ -135,9 +153,10 @@ ggplot(intervals.para) +
     ggtitle("Perspective 1 - 90% parameter uncertainty interval")
 ```
 
-## Perspective 2: Maximum Likelihood Estimation (MLE)
+# Perspective 2: Maximum Likelihood Estimation (MLE)
 
-We estimate the parameters by maximizing the likelihood of the observed data, assuming normal and gamma-distributed errors. We then fit the model using these MLE parameters.
+## Normally distributed errors
+We estimate the parameters by maximizing the likelihood of the observed data, assuming normal- and gamma-distributed errors. We then fit the model using these MLE parameters.
 
 ```{r}
 log.ll.normal <- function(theta, data, LOQ=6) {
@@ -146,7 +165,10 @@ log.ll.normal <- function(theta, data, LOQ=6) {
     sum(dnorm(obs, mean=conc.pred, sd=exp(theta[3]), log=TRUE))
 }
 
-mle = maxLik(log.ll.normal, start=c(k.u=90, k.e=1, log.sd=log(1)), data=df, LOQ = LOQ, method="NM")
+mle <- maxLik::maxLik(log.ll.normal,
+                      start = c(k.u=112, k.e=0.003, log.sd=log(1)),
+                      data = data.boot, LOQ = LOQ,
+                      method = "NM")
 summary(mle)
 
 parameters.P2 <- mle$estimate
@@ -161,6 +183,7 @@ ggplot(simu.mean, aes(time, conc)) +
     ggtitle("MLE fit for normal errors")
 ```
 
+## Gamma-distributed errors
 We repeat the above process for gamma-distributed errors.
 
 ```{r}
@@ -173,7 +196,10 @@ log.ll.gamma <- function(theta, data, LOQ=6) {
     sum(dgamma(obs, shape=shape, scale=scale, log=TRUE))
 }
 
-mle.g = maxLik(log.ll.gamma, start=c(k.u=80, k.e=0.8, log.sd=log(1)), data=df, LOQ=LOQ, method="NM")
+mle.g <- maxLik::maxLik(log.ll.gamma,
+                        start = c(k.u=112, k.e=0.003, log.sd=log(1)),
+                        data = data.boot, LOQ = LOQ,
+                        method= "NM")
 summary(mle.g)
 
 parameters.P2.g <- mle$estimate
@@ -188,13 +214,15 @@ ggplot(simu.mean.g, aes(time, conc)) +
     ggtitle("MLE fit for gamma errors")
 ```
 
-### Bootstrapping
+## Bootstrapping
 
-The maximum likelihood estimation computes confidence intervals of the
-parameters based on large sample size approximation. Bootstrapping
-avoids this approximations and also offers a straight-forward way to
-propagate the parameter uncertainty through the model to compute
-prediction intervals.
+Maximum likelihood estimation computes confidence intervals for the
+parameters based on large-sample-size approximations. Bootstrapping
+avoids these approximations and also offers a straightforward way to
+propagate parameter uncertainty through the model to compute
+confidence intervals for predictions.
+
+### Normal distributed errors
 
 ```{r}
 # run non-parametric bootstrap
@@ -209,9 +237,7 @@ for(i in 1:M){
     fit <- maxLik::maxNM(log.ll.normal,
                          start = parameters.P2,
                          data = data.boot, LOQ = LOQ,
-                         parscale = c(100, 1, 5),
-                         constraints = list(ineqA=diag(3), ineqB=c(0,0,5)) #  A %*% theta + B > 0
-                         )
+                         parscale = c(100, 1, 5))
 
     if(fit$code <= 2){ # check for convergence
         thetas.boot[i,] <- coef(fit)
@@ -243,9 +269,10 @@ ggplot() +
     ggtitle("Bootstrapped 90% confidence and prediction intervals with normal errors")
 ```
 
+### Gamma distributed errors
 
 Again, we repeat the same procedure for the likelihood function based
-on the Gamma distribution.
+on the gamma distribution.
 
 ```{r}
 # run non-parametric bootstrap
@@ -260,9 +287,7 @@ for(i in 1:M){
     fit <- maxLik::maxNM(log.ll.gamma,
                          start = parameters.P2.g,
                          data = data.boot, LOQ = LOQ,
-                         parscale = c(100, 1, 5),
-                         constraints = list(ineqA=diag(3), ineqB=c(0,0,5)) #  A %*% theta + B > 0
-                         )
+                         parscale = c(100, 1, 5))
 
     if(fit$code <= 2){ #check for convergence
         thetas.boot.g[i,] <- coef(fit)
@@ -298,14 +323,13 @@ ggplot() +
 
 
 
-## Perspective 3: Bayesian Inference
+# Perspective 3: Bayesian Inference
 
 We incorporate prior knowledge into the model using a Bayesian approach, which allows us to sample from the posterior distribution of the parameters and estimate the uncertainty in our predictions.
 
-### Log-Prior Definition
+## Prior Definition
 
-The priors for the parameters are based on Hendriks et al. (2001).
-
+As in Perspective 1, the priors for the parameters are based on Hendriks et al. (2001).
 ```{r}
 log.prior <- function(theta) {
     k.u <- 112.798
@@ -321,7 +345,7 @@ log.prior <- function(theta) {
 }
 ```
 
-### Posterior Distribution
+## Posterior Distribution
 
 We define functions proportional to the posterior distribution, incorporating both likelihood and prior information.
 
@@ -335,9 +359,9 @@ log.post.gamma <- function(theta, data, ...) {
 }
 ```
 
-### MCMC Sampling
+## MCMC Sampling
 
-We sample from the posterior distribution using a Markov Chain Monte Carlo (MCMC) method. This helps us quantify the uncertainty in the model predictions.
+We sample from the posterior distribution using a Markov chain Monte Carlo (MCMC) method. This helps us quantify the uncertainty in the model predictions.
 
 ```{r}
 pp.normal <- MCMC(log.post.normal, n=15000,
@@ -349,9 +373,7 @@ post.normal <- convert.to.coda(pp.normal)
 
 plot(post.normal)                              # whole chain
 
-plot(window(post.normal, start=5000))
-
-pairs(pp.normal$samples, col=gray(0, alpha=0.01))
+pairs(pp.normal$samples[5000:15000,], col=gray(0, alpha=0.02))
 
 pp.gamma <- MCMC(log.post.gamma, n=15000,
                  init = c(k.u=90, k.e=1, log.sd=2),
@@ -362,20 +384,18 @@ post.gamma <- convert.to.coda(pp.gamma)
 
 plot(post.gamma)                              # whole chain
 
-plot(window(post.gamma, start=5000))
-
-pairs(pp.gamma$samples, col=gray(0, alpha=0.01))
+pairs(pp.gamma$samples[5000:15000,], col=gray(0, alpha=0.02))
 ```
 
-### Credibility Intervals
+## Credible and Posterior Prediction Intervals
 
-Finally, we plot the 90% credibility intervals for normal and gamma errors, incorporating both parameter and total uncertainty.
+Finally, we plot the 90% credible intervals for normal and gamma errors, incorporating both parameter and total uncertainty.
 
 ```{r}
 n <- 10000
 X.para <- X.total <- matrix(NA, ncol=length(tsim), nrow=n)
 for(i in 1:n){
-    idx <- sample(1:nrow(pp.normal$samples),1)
+    idx <- sample(5000:15000, 1) # avoid the first 5000 burn-in samples
     para <- pp.normal$samples[idx,]
     X.para[i,] <- bioacc(para, C_water, tc, tsim)$conc
     sd <- exp(para[3])
@@ -398,7 +418,7 @@ ggplot(intervals.para) +
 n <- 10000
 X.para <- X.total <- matrix(NA, ncol=length(tsim), nrow=n)
 for(i in 1:n){
-    idx <- sample(1:nrow(pp.gamma$samples),1)
+    idx <- sample(5000:15000, 1) # avoid the first 5000 burn-in samples
     para <- pp.gamma$samples[idx,]
     X.para[i,] <- mode <- bioacc(para, C_water, tc, tsim)$conc
     sd <- exp(para[3])
@@ -419,4 +439,85 @@ ggplot(intervals.para) +
     geom_vline(xintercept = 1, linetype="dashed") +
     geom_point(data = df, aes(time, Cinternal)) +
     ggtitle("Bayesian 90% parameter and total uncertainty interval with gamma errors")
+```
+
+# Compare Parameters
+
+For Perspective 3, we can see how much we have learned from the data by
+comparing the prior and the posterior distributions. Note that, strictly
+speaking, the bootstrap distribution cannot be compared to the
+prior. The prior represents (inter-)subjective prior knowledge,
+whereas the bootstrap reflects the distribution of the frequentist
+estimator of the parameter.
+
+```{r}
+## Define density of prior distributions for the parameters separately
+k.u <- 112.798
+meanlog.k.u <- log10(k.u) / log10(exp(1))
+
+k.e <- 0.00296
+meanlog.k.e <- log10(k.e) / log10(exp(1))
+
+sdlog <- log10(10) / log10(exp(1))
+
+d.ku <- function(theta) dlnorm(theta, meanlog.k.u, sdlog, log=F)
+d.ke <- function(theta) dlnorm(theta, meanlog.k.e, sdlog, log=F)
+```
+
+
+## Normal Errors
+
+```{r}
+par(mfrow=c(2,2))
+
+ku.plt <- seq(0, 300, 1)
+ke.plt <- seq(0, 3, 0.01)
+
+## --- bootstrapping
+hist(thetas.boot[,"k.u"], xlim=c(0, 300),
+     xlab="k.u", main = "Prior and bootstrap distribution", probability = TRUE, breaks=25)
+lines(ku, d.ku(ku), type="l", col="red", lwd=2)
+
+hist(thetas.boot[,"k.e"],  xlim=c(0, 3),
+     xlab="k.e", main = "Prior and bootstrap distribution", probability = TRUE, breaks=25)
+lines(ke, d.ke(ke), type="l", col="red", lwd=2)
+
+
+## --- Bayesian
+hist(pp.normal$samples[5000:15000,"k.u"], xlim=c(0, 300),
+     xlab="k.u", main = "Prior and Bayesian posterior", probability = TRUE, breaks=25)
+lines(ku.plt, d.ku(ku.plt), type="l", col="red", lwd=2)
+
+hist(pp.normal$samples[5000:15000,"k.e"],  xlim=c(0, 3),
+     xlab="k.e", main = "Prior and Bayesian posterior", probability = TRUE, breaks=25)
+lines(ke.plt, d.ke(ke.plt), type="l", col="red", lwd=2)
+```
+
+
+## Gamma Errors
+
+```{r}
+par(mfrow=c(2,2))
+
+ku.plt <- seq(0, 300, 1)
+ke.plt <- seq(0, 3, 0.01)
+
+## --- bootstrapping
+hist(thetas.boot.g[,"k.u"], xlim=c(0, 300),
+     xlab="k.u", main = "Prior and bootstrap distribution", probability = TRUE, breaks=25)
+lines(ku, d.ku(ku), type="l", col="red", lwd=2)
+
+hist(thetas.boot.g[,"k.e"],  xlim=c(0, 3),
+     xlab="k.e", main = "Prior and bootstrap distribution", probability = TRUE, breaks=25)
+lines(ke, d.ke(ke), type="l", col="red", lwd=2)
+
+
+## --- bayes
+hist(pp.gamma$samples[5000:15000,"k.u"], xlim=c(0, 300),
+     xlab="k.u", main = "Prior and Bayesian posterior", probability = TRUE, breaks=25)
+lines(ku.plt, d.ku(ku.plt), type="l", col="red", lwd=2)
+
+hist(pp.gamma$samples[5000:15000,"k.e"],  xlim=c(0, 3),
+     xlab="k.e", main = "Prior and Bayesian posterior", probability = TRUE, breaks=25)
+lines(ke.plt, d.ke(ke.plt), type="l", col="red", lwd=2)
 ```
