@@ -11,7 +11,12 @@ knitr::opts_chunk$set(warning = FALSE)
 library(ggplot2)
 library(maxLik)            # maximum likelihood estimation
 library(adaptMCMC)         # MCMC sampling algorithm
+
+set.seed(108)
 ```
+
+
+- add prior, posterior, and bootstap CI
 
 ## Introduction
 
@@ -39,15 +44,17 @@ compute.intervals <- function(X, tsim){
 
 ## Import Data
 
-Here, we load the dataset which contains measurements of internal concentrations in *Gammarus pulex* over time. The dataset is then visualized to understand the time course of internal concentration.
+Here, we load the dataset which contains measurements of internal
+concentrations in *Gammarus pulex* over time. The dataset is
+visualized to understand the time course of internal concentration
+Unfortunately we do not know which points belong to the same replica.
 
 ```{r}
 df <- read.table("data/data_Malathion_Ashauer_2010.csv", header = TRUE, sep = ",")
 df$sampling_date <- as.factor(df$sampling_date)
 
-ggplot(data = df, aes(x = time, y = Cinternal, col=sampling_date)) +
-    geom_line() +
-    geom_point(size=5) +
+ggplot(data = df, aes(x = time, y = Cinternal)) +
+    geom_point(size=5, alpha=0.7) +
     xlab("Time (days)") +
     ylab("Internal measured concentration (picomol/g wet weight)") +
     geom_vline(xintercept = 1, linetype="dashed")
@@ -58,11 +65,14 @@ We also define the limit of quantification (LOQ)
 ## Limit of detection nmol/kg(wet weight)
 ## from Table 5 in SI of Ashaue et al (2010)
 LOQ <- 6
-
 ```
 ## Define Deterministic Model
 
-We define a deterministic toxicokinetic model with two parameters: uptake rate ($k_u$) and elimination rate ($k_e$). This model predicts the internal concentration based on the exposure concentration in water and the simulation times.
+We define a deterministic toxicokinetic model with two parameters:
+uptake rate ($k_u$) and elimination rate ($k_e$). This model predicts
+the internal concentration based on the exposure concentration in
+water and the simulation times. Note, the implementation assumes that
+`tsim` is ordered.
 
 ```{r}
 bioacc <- function(parameters, C_water, tc, tsim){
@@ -81,16 +91,20 @@ bioacc <- function(parameters, C_water, tc, tsim){
 }
 ```
 
+```{r}
+C_water <- unique(df$Cwater)     # exposure concentration
+tc <- 1                          # time until exposure ends [days]
+```
+
 ## Perspective 1: Pre-defined Parameters
 
 Using pre-defined parameters based on Hendriks et al. (2001), we run the model to predict internal concentrations and compare them to the observed data. We also sample parameter uncertainty and plot the 90% prediction interval.
 
 ```{r}
-parameters.P1 <- c(k.u = 112.798, k.e = 0.00296)
-C_water <- unique(df$Cwater)
-tc <- 1
-tsim <- seq(0, 7.5, length=111)
 
+parameters.P1 <- c(k.u = 112.798, k.e = 0.00296)
+
+tsim <- seq(0, 7.5, length=111)
 simu.mean <- bioacc(parameters.P1, C_water, tc, tsim)
 
 ggplot(simu.mean, aes(time, conc)) +
@@ -159,13 +173,13 @@ log.ll.gamma <- function(theta, data, LOQ=6) {
     sum(dgamma(obs, shape=shape, scale=scale, log=TRUE))
 }
 
-mle = maxLik(log.ll.gamma, start=c(k.u=80, k.e=0.8, log.sd=log(1)), data=df, LOQ=LOQ, method="NM")
-summary(mle)
+mle.g = maxLik(log.ll.gamma, start=c(k.u=80, k.e=0.8, log.sd=log(1)), data=df, LOQ=LOQ, method="NM")
+summary(mle.g)
 
-parameters.P2 <- mle$estimate
-simu.mean <- bioacc(parameters.P2, C_water, tc, tsim)
+parameters.P2.g <- mle$estimate
+simu.mean.g <- bioacc(parameters.P2.g, C_water, tc, tsim)
 
-ggplot(simu.mean, aes(time, conc)) +
+ggplot(simu.mean.g, aes(time, conc)) +
     geom_line(col = "orange", linewidth = 1.5) +
     xlab("Time (hours)") +
     ylab("Internal predicted concentrations") +
@@ -176,24 +190,26 @@ ggplot(simu.mean, aes(time, conc)) +
 
 ### Bootstrapping
 
-The  maximum likelihood
-estimation computes confidence intervals of the parameters  based on large sample size
-approximation. Bootstrapping avoids this approximations and also offers
-a straight-forward way to propagate the parameter uncertainty through
-the model to compute prediction intervals.
+The maximum likelihood estimation computes confidence intervals of the
+parameters based on large sample size approximation. Bootstrapping
+avoids this approximations and also offers a straight-forward way to
+propagate the parameter uncertainty through the model to compute
+prediction intervals.
 
 ```{r}
 # run non-parametric bootstrap
 
 M <- 3000
 thetas.boot <- matrix(NA, ncol=3, nrow=M)
+colnames(thetas.boot) <- c("k.u", "k.e", "log.sd")
 for(i in 1:M){
     idx <- sample(1:nrow(df), nrow(df), replace=TRUE)
     data.boot <- df[idx,]
-    fit = maxLik::maxLik(log.ll.normal,
-                         start=c(k.u=90, k.e=1, log.sd=log(1)),
-                         data=data.boot, LOQ = LOQ,
-                         method = "NM",
+    data.boot <- data.boot[order(data.boot$time),]
+    fit <- maxLik::maxNM(log.ll.normal,
+                         start = parameters.P2,
+                         data = data.boot, LOQ = LOQ,
+                         parscale = c(100, 1, 5),
                          constraints = list(ineqA=diag(3), ineqB=c(0,0,5)) #  A %*% theta + B > 0
                          )
 
@@ -216,32 +232,35 @@ for(i in 1:M){
 intervals.para <- compute.intervals(X.para, tsim)
 intervals.total <- compute.intervals(X.total, tsim)
 
-ggplot(intervals.para) +
-    geom_line(aes(x=time, y=p50), col = "orange", linewidth = 1.5) +
-    geom_ribbon(aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
-    geom_ribbon(data=intervals.total, aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
+ggplot() +
+    geom_ribbon(data=intervals.total, aes(x=time, y=p50, ymin=p05, ymax=p95), fill = gray(0.75)) +
+    geom_ribbon(data=intervals.para, aes(x=time, y=p50, ymin=p05, ymax=p95), fill = gray(0.6)) +
+    geom_line(data = simu.mean, aes(time, conc), col = "orange", linewidth = 1.5) +
     xlab("Time (hours)") +
     ylab("Internal concentration") +
     geom_vline(xintercept = 1, linetype="dashed") +
     geom_point(data = df, aes(time, Cinternal)) +
     ggtitle("Bootstrapped 90% confidence and prediction intervals with normal errors")
-
 ```
 
 
+Again, we repeat the same procedure for the likelihood function based
+on the Gamma distribution.
 
 ```{r}
 # run non-parametric bootstrap
 
 M <- 3000
 thetas.boot.g <- matrix(NA, ncol=3, nrow=M)
+colnames(thetas.boot.g) <- c("k.u", "k.e", "log.sd")
 for(i in 1:M){
     idx <- sample(1:nrow(df), nrow(df), replace=TRUE)
     data.boot <- df[idx,]
-    fit = maxLik::maxLik(log.ll.gamma,
-                         start=c(k.u=90, k.e=1, log.sd=log(1)),
-                         data=data.boot, LOQ = LOQ,
-                         method = "NM",
+    data.boot <- data.boot[order(data.boot$time),]
+    fit <- maxLik::maxNM(log.ll.gamma,
+                         start = parameters.P2.g,
+                         data = data.boot, LOQ = LOQ,
+                         parscale = c(100, 1, 5),
                          constraints = list(ineqA=diag(3), ineqB=c(0,0,5)) #  A %*% theta + B > 0
                          )
 
@@ -266,16 +285,15 @@ for(i in 1:M){
 intervals.para.g <- compute.intervals(X.para.g, tsim)
 intervals.total.g <- compute.intervals(X.total.g, tsim)
 
-ggplot(intervals.para.g) +
-    geom_line(aes(x=time, y=p50), col = "orange", linewidth = 1.5) +
-    geom_ribbon(aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
-    geom_ribbon(data=intervals.total.g, aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
+ggplot() +
+    geom_ribbon(data=intervals.total.g, aes(x=time, y=p50, ymin=p05, ymax=p95), fill = gray(0.75)) +
+    geom_ribbon(data=intervals.para.g, aes(x=time, y=p50, ymin=p05, ymax=p95), fill = gray(0.6)) +
+    geom_line(data = simu.mean.g, aes(time, conc), col = "orange", linewidth = 1.5) +
     xlab("Time (hours)") +
     ylab("Internal concentration") +
     geom_vline(xintercept = 1, linetype="dashed") +
     geom_point(data = df, aes(time, Cinternal)) +
     ggtitle("Bootstrapped 90% confidence and prediction intervals with gamma errors")
-
 ```
 
 
@@ -375,7 +393,7 @@ ggplot(intervals.para) +
     ylab("Internal concentration") +
     geom_vline(xintercept = 1, linetype="dashed") +
     geom_point(data = df, aes(time, Cinternal)) +
-    ggtitle("90% parameter and total uncertainty interval with normal errors")
+    ggtitle("Bayesian 90% parameter and total uncertainty interval with normal errors")
 
 n <- 10000
 X.para <- X.total <- matrix(NA, ncol=length(tsim), nrow=n)
@@ -400,5 +418,5 @@ ggplot(intervals.para) +
     ylab("Internal concentration") +
     geom_vline(xintercept = 1, linetype="dashed") +
     geom_point(data = df, aes(time, Cinternal)) +
-    ggtitle("90% parameter and total uncertainty interval with gamma errors")
+    ggtitle("Bayesian 90% parameter and total uncertainty interval with gamma errors")
 ```
