@@ -19,6 +19,13 @@ library(adaptMCMC)         # MCMC sampling algorithm
 
 set.seed(108)
 ```
+## Notes
+
+- The dataset used is from Ashauer (2010). The `sampling_date` column
+  does not directly correspond to `replicate` in the dataset used by Sandrine.
+- We use the limit of quantification (LOQ) divided by 2 for below-detection data, which is a common but not entirely correct approach.
+- The priors are based on Hendriks et al. (2001).
+
 
 # Introduction
 
@@ -28,13 +35,6 @@ exposed to Malathion, as reported by Ashauer (2010). The analysis
 explores three perspectives: using predefined parameters,
 performing maximum likelihood estimation (MLE), and incorporating
 Bayesian approaches to account for parameter uncertainty.
-
-## Notes
-
-- The dataset used is from Ashauer (2010). The `sampling_date` column
-  does not directly correspond to `replicate` in the dataset used by Sandrine.
-- We use the limit of quantification (LOQ) divided by 2 for below-detection data, which is a common but not entirely correct approach.
-- The priors are based on Hendriks et al. (2001).
 
 
 ### Import Data
