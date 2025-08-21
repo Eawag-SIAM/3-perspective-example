@@ -1,6 +1,8 @@
 # Didactic code example of "Three perspectives on model building and calibration for ecological risk assessment"
 
+## View html
 
+https://eawag-siam.github.io/3-perspective-example/toxicokinetic_model_example.html
 
 ## Update html
 
