@@ -537,6 +537,7 @@ P1 <- ggplot(intervals.para.P1) +
   ggtitle("P1 Propagating prior knowledge") +
   theme(plot.title = element_text(size = 11))
 
+# P2
 P2 <- ggplot(intervals.para.P2.g) +
   geom_ribbon(aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
   geom_ribbon(data=intervals.total.P2.g, aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
@@ -561,11 +562,8 @@ P3 <- ggplot(intervals.para.P3.g) +
   ggtitle("P3 Calibration with prior knowledge") +
  theme(plot.title = element_text(size = 11))
 
-
 combined_plot <- P1 | P2 | P3
 
 # Save to PDF
 ggsave("Box1_Figure.pdf", combined_plot, width = 12, height = 4)
-
-
 ```
