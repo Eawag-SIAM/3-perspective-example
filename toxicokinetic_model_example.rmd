@@ -14,6 +14,7 @@ output:
 knitr::opts_chunk$set(echo = TRUE, fig.width=9)
 knitr::opts_chunk$set(warning = FALSE)
 library(ggplot2)
+library(patchwork)
 library(maxLik)            # maximum likelihood estimation
 library(adaptMCMC)         # MCMC sampling algorithm
 
@@ -22,7 +23,7 @@ set.seed(108)
 ## Notes
 
 - The dataset used is from Ashauer (2010). The `sampling_date` column
-  does not directly correspond to `replicate` in the dataset used by Sandrine.
+does not directly correspond to `replicate` in the dataset used by Sandrine.
 - We use the limit of quantification (LOQ) divided by 2 for below-detection data, which is a common but not entirely correct approach.
 - The priors are based on Hendriks et al. (2001).
 
@@ -49,10 +50,10 @@ df <- read.table("data/data_Malathion_Ashauer_2010.csv", header = TRUE, sep = ",
 df$sampling_date <- as.factor(df$sampling_date)
 
 ggplot(data = df, aes(x = time, y = Cinternal)) +
-    geom_point(size=5, alpha=0.7) +
-    xlab("Time (days)") +
-    ylab("Internal measured concentration (picomol/g wet weight)") +
-    geom_vline(xintercept = 1, linetype="dashed")
+  geom_point(size=5, alpha=0.7) +
+  xlab("Time (days)") +
+  ylab("Internal measured concentration (picomol/g wet weight)") +
+  geom_vline(xintercept = 1, linetype="dashed")
 ```
 
 We also define the limit of quantification (LOQ).
@@ -71,18 +72,18 @@ water and the simulation times. Note that the implementation assumes that
 
 ```{r}
 bioacc <- function(parameters, C_water, tc, tsim){
-    k.u <- parameters[1]
-    k.e <- parameters[2]
-
-    tacc <- tsim[tsim <= tc]
-    Cacc <- k.u*C_water*(1 - exp(-k.e*tacc))/k.e
-
-    tdep <- tsim[tsim > tc]
-    Cdep <- k.u*C_water*(exp(k.e*(tc - tdep)) - exp(-k.e*tdep))/k.e
-
-    result <- data.frame(time = c(tacc, tdep),
-                         conc = c(Cacc, Cdep))
-    return(result)
+  k.u <- parameters[1]
+  k.e <- parameters[2]
+  
+  tacc <- tsim[tsim <= tc]
+  Cacc <- k.u*C_water*(1 - exp(-k.e*tacc))/k.e
+  
+  tdep <- tsim[tsim > tc]
+  Cdep <- k.u*C_water*(exp(k.e*(tc - tdep)) - exp(-k.e*tdep))/k.e
+  
+  result <- data.frame(time = c(tacc, tdep),
+                       conc = c(Cacc, Cdep))
+  return(result)
 }
 ```
 
@@ -98,11 +99,11 @@ in time using Monte Carlo simulations of the model output.
 
 ```{r}
 compute.intervals <- function(X, tsim){
-    intervals <-  t(apply(X, 2, function(x){quantile(x, probs=c(0.05, 0.5, 0.95))}))
-    intervals <- as.data.frame(intervals)
-    colnames(intervals) <- c("p05", "p50", "p95")
-    intervals$time <- tsim
-    intervals
+  intervals <-  t(apply(X, 2, function(x){quantile(x, probs=c(0.05, 0.5, 0.95))}))
+  intervals <- as.data.frame(intervals)
+  colnames(intervals) <- c("p05", "p50", "p95")
+  intervals$time <- tsim
+  intervals
 }
 ```
 
@@ -119,38 +120,38 @@ prediction interval.
 parameters.P1 <- c(k.u = 112.798, k.e = 0.00296)
 
 tsim <- seq(0, 7.5, length=111)
-simu.mean <- bioacc(parameters.P1, C_water, tc, tsim)
+simu.mean.P1 <- bioacc(parameters.P1, C_water, tc, tsim)
 
-ggplot(simu.mean, aes(time, conc)) +
-    geom_line(col = "orange", linewidth = 1.5) +
-    xlab("Time (hours)") +
-    ylab("Internal predicted concentrations") +
-    geom_vline(xintercept = 1, linetype="dashed") +
-    geom_point(data = df, aes(time, Cinternal)) +
-    ggtitle("Perspective 1")
+ggplot(simu.mean.P1, aes(time, conc)) +
+  geom_line(col = "orange", linewidth = 1.5) +
+  xlab("Time (hours)") +
+  ylab("Internal predicted concentrations") +
+  geom_vline(xintercept = 1, linetype="dashed") +
+  geom_point(data = df, aes(time, Cinternal)) +
+  ggtitle("Perspective 1")
 
 n <- 10000
 X.para <- matrix(NA, ncol=length(tsim), nrow=n)
 for(i in 1:n){
-    meanlog.k.u = log10(parameters.P1['k.u']) / log10(exp(1))
-    meanlog.k.e = log10(parameters.P1['k.e']) / log10(exp(1))
-    sdlog = log10(10) / log10(exp(1))
-    para <- c(rlnorm(1, meanlog.k.u, sdlog),
-              rlnorm(1, meanlog.k.e, sdlog))
-
-    X.para[i,] <- bioacc(para, C_water, tc, tsim)$conc
+  meanlog.k.u = log10(parameters.P1['k.u']) / log10(exp(1))
+  meanlog.k.e = log10(parameters.P1['k.e']) / log10(exp(1))
+  sdlog = log10(10) / log10(exp(1))
+  para <- c(rlnorm(1, meanlog.k.u, sdlog),
+            rlnorm(1, meanlog.k.e, sdlog))
+  
+  X.para[i,] <- bioacc(para, C_water, tc, tsim)$conc
 }
 
-intervals.para <- compute.intervals(X.para, tsim)
+intervals.para.P1 <- compute.intervals(X.para, tsim)
 
-ggplot(intervals.para) +
-    geom_line(aes(x=time, y=p50), col = "orange", linewidth = 1.5) +
-    geom_ribbon(aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
-    xlab("Time (hours)") +
-    ylab("Internal concentration") +
-    geom_vline(xintercept = 1, linetype="dashed") +
-    geom_point(data = df, aes(time, Cinternal)) +
-    ggtitle("Perspective 1 - 90% parameter uncertainty interval")
+ggplot(intervals.para.P1) +
+  geom_line(aes(x=time, y=p50), col = "orange", linewidth = 1.5) +
+  geom_ribbon(aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
+  xlab("Time (hours)") +
+  ylab("Internal concentration") +
+  geom_vline(xintercept = 1, linetype="dashed") +
+  geom_point(data = df, aes(time, Cinternal)) +
+  ggtitle("Perspective 1 - 90% parameter uncertainty interval")
 ```
 
 # Perspective 2: Maximum Likelihood Estimation (MLE)
@@ -160,27 +161,27 @@ We estimate the parameters by maximizing the likelihood of the observed data, as
 
 ```{r}
 log.ll.normal <- function(theta, data, LOQ=6) {
-    conc.pred <- bioacc(theta, unique(data$Cwater), tc = 1, tsim = data$time)$conc
-    obs <- ifelse(data$Cinternal==0, LOQ/2, data$Cinternal)
-    sum(dnorm(obs, mean=conc.pred, sd=exp(theta[3]), log=TRUE))
+  conc.pred <- bioacc(theta, unique(data$Cwater), tc = 1, tsim = data$time)$conc
+  obs <- ifelse(data$Cinternal==0, LOQ/2, data$Cinternal)
+  sum(dnorm(obs, mean=conc.pred, sd=exp(theta[3]), log=TRUE))
 }
 
 mle <- maxLik::maxLik(log.ll.normal,
                       start = c(k.u=112, k.e=0.003, log.sd=log(1)),
-                      data = data.boot, LOQ = LOQ,
+                      data = df, LOQ = LOQ,
                       method = "NM")
 summary(mle)
 
-parameters.P2 <- mle$estimate
-simu.mean <- bioacc(parameters.P2, C_water, tc, tsim)
+parameters.P2.n <- mle$estimate
+simu.mean.P2.n <- bioacc(parameters.P2.n, C_water, tc, tsim)
 
-ggplot(simu.mean, aes(time, conc)) +
-    geom_line(col = "orange", linewidth = 1.5) +
-    xlab("Time (hours)") +
-    ylab("Internal predicted concentrations") +
-    geom_vline(xintercept = 1, linetype="dashed") +
-    geom_point(data = df, aes(time, Cinternal)) +
-    ggtitle("MLE fit for normal errors")
+ggplot(simu.mean.P2.n, aes(time, conc)) +
+  geom_line(col = "orange", linewidth = 1.5) +
+  xlab("Time (hours)") +
+  ylab("Internal predicted concentrations") +
+  geom_vline(xintercept = 1, linetype="dashed") +
+  geom_point(data = df, aes(time, Cinternal)) +
+  ggtitle("MLE fit for normal errors")
 ```
 
 ## Gamma-distributed errors
@@ -188,30 +189,30 @@ We repeat the above process for gamma-distributed errors.
 
 ```{r}
 log.ll.gamma <- function(theta, data, LOQ=6) {
-    mode <- bioacc(theta, unique(data$Cwater), tc = 1, tsim = data$time)$conc
-    sd <- exp(theta[3])
-    scale <- 0.5*(sqrt(4*sd^2+mode^2) - mode)
-    shape <- mode/scale + 1
-    obs <- ifelse(data$Cinternal==0, LOQ/2, data$Cinternal)
-    sum(dgamma(obs, shape=shape, scale=scale, log=TRUE))
+  mode <- bioacc(theta, unique(data$Cwater), tc = 1, tsim = data$time)$conc
+  sd <- exp(theta[3])
+  scale <- 0.5*(sqrt(4*sd^2+mode^2) - mode)
+  shape <- mode/scale + 1
+  obs <- ifelse(data$Cinternal==0, LOQ/2, data$Cinternal)
+  sum(dgamma(obs, shape=shape, scale=scale, log=TRUE))
 }
 
 mle.g <- maxLik::maxLik(log.ll.gamma,
                         start = c(k.u=112, k.e=0.003, log.sd=log(1)),
-                        data = data.boot, LOQ = LOQ,
+                        data = df, LOQ = LOQ,
                         method= "NM")
 summary(mle.g)
 
 parameters.P2.g <- mle$estimate
-simu.mean.g <- bioacc(parameters.P2.g, C_water, tc, tsim)
+simu.mean.P2.g <- bioacc(parameters.P2.g, C_water, tc, tsim)
 
-ggplot(simu.mean.g, aes(time, conc)) +
-    geom_line(col = "orange", linewidth = 1.5) +
-    xlab("Time (hours)") +
-    ylab("Internal predicted concentrations") +
-    geom_vline(xintercept = 1, linetype="dashed") +
-    geom_point(data = df, aes(time, Cinternal)) +
-    ggtitle("MLE fit for gamma errors")
+ggplot(simu.mean.P2.g, aes(time, conc)) +
+  geom_line(col = "orange", linewidth = 1.5) +
+  xlab("Time (hours)") +
+  ylab("Internal predicted concentrations") +
+  geom_vline(xintercept = 1, linetype="dashed") +
+  geom_point(data = df, aes(time, Cinternal)) +
+  ggtitle("MLE fit for gamma errors")
 ```
 
 ## Bootstrapping
@@ -231,17 +232,17 @@ M <- 3000
 thetas.boot <- matrix(NA, ncol=3, nrow=M)
 colnames(thetas.boot) <- c("k.u", "k.e", "log.sd")
 for(i in 1:M){
-    idx <- sample(1:nrow(df), nrow(df), replace=TRUE)
-    data.boot <- df[idx,]
-    data.boot <- data.boot[order(data.boot$time),]
-    fit <- maxLik::maxNM(log.ll.normal,
-                         start = parameters.P2,
-                         data = data.boot, LOQ = LOQ,
-                         parscale = c(100, 1, 5))
-
-    if(fit$code <= 2){ # check for convergence
-        thetas.boot[i,] <- coef(fit)
-    }
+  idx <- sample(1:nrow(df), nrow(df), replace=TRUE)
+  data.boot <- df[idx,]
+  data.boot <- data.boot[order(data.boot$time),]
+  fit <- maxLik::maxNM(log.ll.normal,
+                       start = parameters.P2.n,
+                       data = data.boot, LOQ = LOQ,
+                       parscale = c(100, 1, 5))
+  
+  if(fit$code <= 2){ # check for convergence
+    thetas.boot[i,] <- coef(fit)
+  }
 }
 
 pairs(thetas.boot, col=gray(0, alpha=0.1))
@@ -249,24 +250,24 @@ pairs(thetas.boot, col=gray(0, alpha=0.1))
 ## propagate parameters through models
 X.para <- X.total <- matrix(NA, ncol=length(tsim), nrow=M)
 for(i in 1:M){
-    para <- thetas.boot[i,]
-    X.para[i,] <- bioacc(para, C_water, tc, tsim)$conc
-    sd <- exp(para[3])
-    X.total[i,] <- rnorm(length(tsim), mean=X.para[i,], sd=sd)
+  para <- thetas.boot[i,]
+  X.para[i,] <- bioacc(para, C_water, tc, tsim)$conc
+  sd <- exp(para[3])
+  X.total[i,] <- rnorm(length(tsim), mean=X.para[i,], sd=sd)
 }
 
-intervals.para <- compute.intervals(X.para, tsim)
-intervals.total <- compute.intervals(X.total, tsim)
+intervals.para.P2.n <- compute.intervals(X.para, tsim)
+intervals.total.P2.n <- compute.intervals(X.total, tsim)
 
 ggplot() +
-    geom_ribbon(data=intervals.total, aes(x=time, y=p50, ymin=p05, ymax=p95), fill = gray(0.75)) +
-    geom_ribbon(data=intervals.para, aes(x=time, y=p50, ymin=p05, ymax=p95), fill = gray(0.6)) +
-    geom_line(data = simu.mean, aes(time, conc), col = "orange", linewidth = 1.5) +
-    xlab("Time (hours)") +
-    ylab("Internal concentration") +
-    geom_vline(xintercept = 1, linetype="dashed") +
-    geom_point(data = df, aes(time, Cinternal)) +
-    ggtitle("Bootstrapped 90% confidence and prediction intervals with normal errors")
+  geom_ribbon(data=intervals.total.P2.n, aes(x=time, y=p50, ymin=p05, ymax=p95), fill = gray(0.75)) +
+  geom_ribbon(data=intervals.para.P2.n, aes(x=time, y=p50, ymin=p05, ymax=p95), fill = gray(0.6)) +
+  geom_line(data = simu.mean.P2.n, aes(time, conc), col = "orange", linewidth = 1.5) +
+  xlab("Time (hours)") +
+  ylab("Internal concentration") +
+  geom_vline(xintercept = 1, linetype="dashed") +
+  geom_point(data = df, aes(time, Cinternal)) +
+  ggtitle("Bootstrapped 90% confidence and prediction intervals with normal errors")
 ```
 
 ### Gamma distributed errors
@@ -281,17 +282,17 @@ M <- 3000
 thetas.boot.g <- matrix(NA, ncol=3, nrow=M)
 colnames(thetas.boot.g) <- c("k.u", "k.e", "log.sd")
 for(i in 1:M){
-    idx <- sample(1:nrow(df), nrow(df), replace=TRUE)
-    data.boot <- df[idx,]
-    data.boot <- data.boot[order(data.boot$time),]
-    fit <- maxLik::maxNM(log.ll.gamma,
-                         start = parameters.P2.g,
-                         data = data.boot, LOQ = LOQ,
-                         parscale = c(100, 1, 5))
-
-    if(fit$code <= 2){ #check for convergence
-        thetas.boot.g[i,] <- coef(fit)
-    }
+  idx <- sample(1:nrow(df), nrow(df), replace=TRUE)
+  data.boot <- df[idx,]
+  data.boot <- data.boot[order(data.boot$time),]
+  fit <- maxLik::maxNM(log.ll.gamma,
+                       start = parameters.P2.g,
+                       data = data.boot, LOQ = LOQ,
+                       parscale = c(100, 1, 5))
+  
+  if(fit$code <= 2){ #check for convergence
+    thetas.boot.g[i,] <- coef(fit)
+  }
 }
 
 pairs(thetas.boot.g, col=gray(0, alpha=0.1))
@@ -299,26 +300,26 @@ pairs(thetas.boot.g, col=gray(0, alpha=0.1))
 ## propagate parameters through models
 X.para.g <- X.total.g <- matrix(NA, ncol=length(tsim), nrow=M)
 for(i in 1:M){
-    para <- thetas.boot.g[i,]
-    X.para.g[i,] <- mode <- bioacc(para, C_water, tc, tsim)$conc
-    sd <- exp(para[3])
-    scale <- 0.5*(sqrt(4*sd^2+mode^2) - mode)
-    shape <- mode/scale + 1
-    X.total.g[i,] <- rgamma(length(tsim), scale=scale, shape=shape)
+  para <- thetas.boot.g[i,]
+  X.para.g[i,] <- mode <- bioacc(para, C_water, tc, tsim)$conc
+  sd <- exp(para[3])
+  scale <- 0.5*(sqrt(4*sd^2+mode^2) - mode)
+  shape <- mode/scale + 1
+  X.total.g[i,] <- rgamma(length(tsim), scale=scale, shape=shape)
 }
 
-intervals.para.g <- compute.intervals(X.para.g, tsim)
-intervals.total.g <- compute.intervals(X.total.g, tsim)
+intervals.para.P2.g <- compute.intervals(X.para.g, tsim)
+intervals.total.P2.g <- compute.intervals(X.total.g, tsim)
 
 ggplot() +
-    geom_ribbon(data=intervals.total.g, aes(x=time, y=p50, ymin=p05, ymax=p95), fill = gray(0.75)) +
-    geom_ribbon(data=intervals.para.g, aes(x=time, y=p50, ymin=p05, ymax=p95), fill = gray(0.6)) +
-    geom_line(data = simu.mean.g, aes(time, conc), col = "orange", linewidth = 1.5) +
-    xlab("Time (hours)") +
-    ylab("Internal concentration") +
-    geom_vline(xintercept = 1, linetype="dashed") +
-    geom_point(data = df, aes(time, Cinternal)) +
-    ggtitle("Bootstrapped 90% confidence and prediction intervals with gamma errors")
+  geom_ribbon(data=intervals.total.P2.g, aes(x=time, y=p50, ymin=p05, ymax=p95), fill = gray(0.75)) +
+  geom_ribbon(data=intervals.para.P2.g, aes(x=time, y=p50, ymin=p05, ymax=p95), fill = gray(0.6)) +
+  geom_line(data = simu.mean.P2.g, aes(time, conc), col = "orange", linewidth = 1.5) +
+  xlab("Time (hours)") +
+  ylab("Internal concentration") +
+  geom_vline(xintercept = 1, linetype="dashed") +
+  geom_point(data = df, aes(time, Cinternal)) +
+  ggtitle("Bootstrapped 90% confidence and prediction intervals with gamma errors")
 ```
 
 
@@ -332,16 +333,16 @@ We incorporate prior knowledge into the model using a Bayesian approach, which a
 As in Perspective 1, the priors for the parameters are based on Hendriks et al. (2001).
 ```{r}
 log.prior <- function(theta) {
-    k.u <- 112.798
-    k.e <- 0.00296
-
-    meanlog.k.u = log10(k.u) / log10(exp(1))
-    meanlog.k.e = log10(k.e) / log10(exp(1))
-    sdlog = log10(10) / log10(exp(1))
-
-    dlnorm(theta[1], meanlog.k.u, sdlog, log=TRUE) +
-        dlnorm(theta[2], meanlog.k.e, sdlog, log=TRUE) +
-        dnorm(theta[3], 2, 2, log=TRUE)
+  k.u <- 112.798
+  k.e <- 0.00296
+  
+  meanlog.k.u = log10(k.u) / log10(exp(1))
+  meanlog.k.e = log10(k.e) / log10(exp(1))
+  sdlog = log10(10) / log10(exp(1))
+  
+  dlnorm(theta[1], meanlog.k.u, sdlog, log=TRUE) +
+    dlnorm(theta[2], meanlog.k.e, sdlog, log=TRUE) +
+    dnorm(theta[3], 2, 2, log=TRUE)
 }
 ```
 
@@ -351,11 +352,11 @@ We define functions proportional to the posterior distribution, incorporating bo
 
 ```{r}
 log.post.normal <- function(theta, data, ...) {
-    log.ll.normal(theta, data, ...) + log.prior(theta)
+  log.ll.normal(theta, data, ...) + log.prior(theta)
 }
 
 log.post.gamma <- function(theta, data, ...) {
-    log.ll.gamma(theta, data, ...) + log.prior(theta)
+  log.ll.gamma(theta, data, ...) + log.prior(theta)
 }
 ```
 
@@ -395,50 +396,50 @@ Finally, we plot the 90% credible intervals for normal and gamma errors, incorpo
 n <- 10000
 X.para <- X.total <- matrix(NA, ncol=length(tsim), nrow=n)
 for(i in 1:n){
-    idx <- sample(5000:15000, 1) # avoid the first 5000 burn-in samples
-    para <- pp.normal$samples[idx,]
-    X.para[i,] <- bioacc(para, C_water, tc, tsim)$conc
-    sd <- exp(para[3])
-    X.total[i,] <- rnorm(length(tsim), mean=X.para[i,], sd=sd)
+  idx <- sample(5000:15000, 1) # avoid the first 5000 burn-in samples
+  para <- pp.normal$samples[idx,]
+  X.para[i,] <- bioacc(para, C_water, tc, tsim)$conc
+  sd <- exp(para[3])
+  X.total[i,] <- rnorm(length(tsim), mean=X.para[i,], sd=sd)
 }
 
-intervals.para <- compute.intervals(X.para, tsim)
-intervals.total <- compute.intervals(X.total, tsim)
+intervals.para.P3.n <- compute.intervals(X.para, tsim)
+intervals.total.P3.n <- compute.intervals(X.total, tsim)
 
-ggplot(intervals.para) +
-    geom_line(aes(x=time, y=p50), col = "orange", linewidth = 1.5) +
-    geom_ribbon(aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
-    geom_ribbon(data=intervals.total, aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
-    xlab("Time (hours)") +
-    ylab("Internal concentration") +
-    geom_vline(xintercept = 1, linetype="dashed") +
-    geom_point(data = df, aes(time, Cinternal)) +
-    ggtitle("Bayesian 90% parameter and total uncertainty interval with normal errors")
+ggplot(intervals.para.P3.n) +
+  geom_line(aes(x=time, y=p50), col = "orange", linewidth = 1.5) +
+  geom_ribbon(aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
+  geom_ribbon(data=intervals.total.P3.n, aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
+  xlab("Time (hours)") +
+  ylab("Internal concentration") +
+  geom_vline(xintercept = 1, linetype="dashed") +
+  geom_point(data = df, aes(time, Cinternal)) +
+  ggtitle("Bayesian 90% parameter and total uncertainty interval with normal errors")
 
 n <- 10000
 X.para <- X.total <- matrix(NA, ncol=length(tsim), nrow=n)
 for(i in 1:n){
-    idx <- sample(5000:15000, 1) # avoid the first 5000 burn-in samples
-    para <- pp.gamma$samples[idx,]
-    X.para[i,] <- mode <- bioacc(para, C_water, tc, tsim)$conc
-    sd <- exp(para[3])
-    scale <- 0.5*(sqrt(4*sd^2+mode^2) - mode)
-    shape <- mode/scale + 1
-    X.total[i,] <- rgamma(length(tsim), scale=scale, shape=shape)
+  idx <- sample(5000:15000, 1) # avoid the first 5000 burn-in samples
+  para <- pp.gamma$samples[idx,]
+  X.para[i,] <- mode <- bioacc(para, C_water, tc, tsim)$conc
+  sd <- exp(para[3])
+  scale <- 0.5*(sqrt(4*sd^2+mode^2) - mode)
+  shape <- mode/scale + 1
+  X.total[i,] <- rgamma(length(tsim), scale=scale, shape=shape)
 }
 
-intervals.para <- compute.intervals(X.para, tsim)
-intervals.total <- compute.intervals(X.total, tsim)
+intervals.para.P3.g <- compute.intervals(X.para, tsim)
+intervals.total.P3.g <- compute.intervals(X.total, tsim)
 
-ggplot(intervals.para) +
-    geom_line(aes(x=time, y=p50), col = "orange", linewidth = 1.5) +
-    geom_ribbon(aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
-    geom_ribbon(data=intervals.total, aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
-    xlab("Time (hours)") +
-    ylab("Internal concentration") +
-    geom_vline(xintercept = 1, linetype="dashed") +
-    geom_point(data = df, aes(time, Cinternal)) +
-    ggtitle("Bayesian 90% parameter and total uncertainty interval with gamma errors")
+ggplot(intervals.para.P3.g) +
+  geom_line(aes(x=time, y=p50), col = "orange", linewidth = 1.5) +
+  geom_ribbon(aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
+  geom_ribbon(data=intervals.total.P3.g, aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
+  xlab("Time (hours)") +
+  ylab("Internal concentration") +
+  geom_vline(xintercept = 1, linetype="dashed") +
+  geom_point(data = df, aes(time, Cinternal)) +
+  ggtitle("Bayesian 90% parameter and total uncertainty interval with gamma errors")
 ```
 
 # Compare Parameters
@@ -476,11 +477,11 @@ ke.plt <- seq(0, 3, 0.01)
 ## --- bootstrapping
 hist(thetas.boot[,"k.u"], xlim=c(0, 300),
      xlab="k.u", main = "Prior and bootstrap distribution", probability = TRUE, breaks=25)
-lines(ku, d.ku(ku), type="l", col="red", lwd=2)
+lines(ku.plt, d.ku(ku.plt), type="l", col="red", lwd=2)
 
 hist(thetas.boot[,"k.e"],  xlim=c(0, 3),
      xlab="k.e", main = "Prior and bootstrap distribution", probability = TRUE, breaks=25)
-lines(ke, d.ke(ke), type="l", col="red", lwd=2)
+lines(ke.plt, d.ke(ke.plt), type="l", col="red", lwd=2)
 
 
 ## --- Bayesian
@@ -505,11 +506,11 @@ ke.plt <- seq(0, 3, 0.01)
 ## --- bootstrapping
 hist(thetas.boot.g[,"k.u"], xlim=c(0, 300),
      xlab="k.u", main = "Prior and bootstrap distribution", probability = TRUE, breaks=25)
-lines(ku, d.ku(ku), type="l", col="red", lwd=2)
+lines(ku.plt, d.ku(ku.plt), type="l", col="red", lwd=2)
 
 hist(thetas.boot.g[,"k.e"],  xlim=c(0, 3),
      xlab="k.e", main = "Prior and bootstrap distribution", probability = TRUE, breaks=25)
-lines(ke, d.ke(ke), type="l", col="red", lwd=2)
+lines(ke.plt, d.ke(ke.plt), type="l", col="red", lwd=2)
 
 
 ## --- bayes
@@ -520,4 +521,51 @@ lines(ku.plt, d.ku(ku.plt), type="l", col="red", lwd=2)
 hist(pp.gamma$samples[5000:15000,"k.e"],  xlim=c(0, 3),
      xlab="k.e", main = "Prior and Bayesian posterior", probability = TRUE, breaks=25)
 lines(ke.plt, d.ke(ke.plt), type="l", col="red", lwd=2)
+```
+
+## Plots for paper
+```{r}
+
+# P1
+P1 <- ggplot(intervals.para.P1) +
+  geom_ribbon(aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
+  geom_line(aes(x=time, y=p50), col = "orange", linewidth = 1.5) +
+  xlab("Time (hours)") +
+  ylab("Internal concentration") +
+  geom_vline(xintercept = 1, linetype="dashed") +
+  geom_point(data = df, aes(time, Cinternal)) +
+  ggtitle("P1 Propagating prior knowledge") +
+  theme(plot.title = element_text(size = 11))
+
+P2 <- ggplot(intervals.para.P2.g) +
+  geom_ribbon(aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
+  geom_ribbon(data=intervals.total.P2.g, aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
+ # geom_line(data = simu.mean.P2.g, aes(time, conc), col = "red", linewidth = 1.5) +
+  geom_line(aes(x=time, y=p50), col = "orange", linewidth = 1.5) +
+  xlab("Time (hours)") +
+  ylab("Internal concentration") +
+  geom_vline(xintercept = 1, linetype="dashed") +
+  geom_point(data = df, aes(time, Cinternal)) +
+  ggtitle("P2 Calibration from data") +
+ theme(plot.title = element_text(size = 11))
+
+#P3
+P3 <- ggplot(intervals.para.P3.g) +
+  geom_ribbon(aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
+  geom_ribbon(data=intervals.total.P3.g, aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
+  geom_line(aes(x=time, y=p50), col = "orange", linewidth = 1.5) +
+  xlab("Time (hours)") +
+  ylab("Internal concentration") +
+  geom_vline(xintercept = 1, linetype="dashed") +
+  geom_point(data = df, aes(time, Cinternal)) +
+  ggtitle("P3 Calibration with prior knowledge") +
+ theme(plot.title = element_text(size = 11))
+
+
+combined_plot <- P1 | P2 | P3
+
+# Save to PDF
+ggsave("Box1_Figure.pdf", combined_plot, width = 12, height = 4)
+
+
 ```
