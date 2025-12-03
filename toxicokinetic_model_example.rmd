@@ -1,6 +1,6 @@
 ---
 title: "The three perspectives demonstrated on a toy example"
-author: "Sandrine Charles, Roman Ashauer, Andreas Scheidegger"
+author: "Andreas Scheidegger, Sandrine Charles, Roman Ashauer, Nele Schuwirth"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output:
   html_document:
@@ -22,6 +22,9 @@ set.seed(108)
 ```
 ## Notes
 
+- Supporting information for the paper:
+  "Three Perspectives on Model Building and Calibration for Ecological Risk Assessment" 
+  by Schuwirth, Ashauer, Baity-Jesi, Charles, Galic, Moor, Preziosi, Scheidegger, Schmolke & Strauss
 - The dataset used is from Ashauer (2010).
 - For simplicity of this didactical example, we use the limit of quantification 
   (LOQ) divided by 2 for below-detection data, which is a common but not entirely 
@@ -30,12 +33,15 @@ set.seed(108)
 
 # Introduction
 
-This document provides an analysis using a one-compartment
+This example provides an analysis using a one-compartment
 toxicokinetic model. The dataset used comes from *Gammarus pulex*
 exposed to Malathion, as reported by Ashauer (2010). The analysis
 explores three perspectives: using predefined parameters,
 performing maximum likelihood estimation (MLE), and incorporating
 Bayesian approaches to account for parameter uncertainty.
+This is a didactical toy example with the goal, to demonstrate
+the technical implementation of all three perspectives. 
+It is not a realistic application case for perspective 1.
 
 ### Import Data
 
@@ -451,7 +457,7 @@ ggplot(intervals.para.P3.g) +
   ggtitle("Bayesian 90% parameter and total uncertainty interval with gamma errors")
 ```
 
-# Compare Parameters
+## Compare Parameters
 
 For Perspective 3, we can see how much we have learned from the data by
 comparing the prior and the posterior distributions. Note that, strictly
@@ -544,8 +550,9 @@ P1 <- ggplot(intervals.para.P1) +
   geom_vline(xintercept = 1, linetype="dashed") +
   geom_point(data = df, aes(time, Cinternal)) +
   ggtitle("P1 Propagating prior knowledge") +
-  theme(plot.title = element_text(size = 11))
-
+  theme(plot.title = element_text(size = 11)) #+
+#  scale_y_log10()
+  
 # P2
 P2 <- ggplot(intervals.para.P2.g) +
   geom_ribbon(aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
@@ -577,3 +584,9 @@ combined_plot <- P1 | P2 | P3
 # Save to PDF
 ggsave("Box1_Figure.pdf", combined_plot, width = 12, height = 4)
 ```
+
+# References: 
+
+Ashauer, R., Caravatti, I., Hintermeister, A. & Escher, B.I. (2010). Bioaccumulation kinetics of organic xenobiotic pollutants in the freshwater invertebrate Gammarus pulex modeled with prediction intervals. Environmental Toxicology and Chemistry, 29, 1625-1636.
+
+Hendriks, A.J., van der Linde, A., Cornelissen, G. & Sijm, D.T.H.M. (2001). The power of size. 1. Rate constants and equilibrium ratios for accumulation of organic substances related to octanol-water partition ratio and species weight. Environmental Toxicology and Chemistry, 20, 1399-1420.
