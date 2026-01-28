@@ -30,23 +30,25 @@ set.seed(108)
   (LOQ) divided by 2 for below-detection data, which is a common but not entirely 
   correct approach.
 - The priors are based on Hendriks et al. (2001).
+- The code and input can be received from https://github.com/Eawag-SIAM/3-perspective-example
 
 # Introduction
 
 This example provides an analysis using a one-compartment
-toxicokinetic model. The dataset used comes from *Gammarus pulex*
+toxicokinetic model. The data set used comes from *Gammarus pulex*
 exposed to Malathion, as reported by Ashauer (2010). The analysis
 explores three perspectives: using predefined parameters,
 performing maximum likelihood estimation (MLE), and incorporating
 Bayesian approaches to account for parameter uncertainty.
 This is a didactical toy example with the goal, to demonstrate
 the technical implementation of all three perspectives. 
-It is not a realistic application case for perspective 1.
+It is not a realistic application case for perspectives 1 and 3.
+The results are not representative for typical use cases.
 
-### Import Data
+# Import Data
 
 We load the data set containing measurements of internal
-concentrations in *Gammarus pulex* over time. The dataset is
+concentrations in *Gammarus pulex* over time. The data set is
 visualized to understand the time course of internal concentrations.
 Unfortunately, we do not know which points belong to the same replicate.
 
@@ -117,8 +119,12 @@ compute.intervals <- function(X, tsim){
 
 Using predefined parameters based on Hendriks et al. (2001), we run
 the model to predict internal concentrations and compare them to the
-observed data. We also sample parameter uncertainty and plot the 90%
-prediction interval. Since in this case the prior knowledge is vague, 
+observed data. We also sample parameter uncertainty and plot the 90% prediction 
+interval. For the prior distribution, we assume lognormal distributions
+to ensure that the parameters can not be negative. They are defined by the mean 
+and standard deviation of each parameter. Since we do not have prior knowledge 
+about their correlation structure, we assume that the priors of the parameters 
+are independent from each other. Since in this case the prior knowledge is vague, 
 it results in large uncertainty intervals.
 
 ```{r}
@@ -130,7 +136,7 @@ simu.mean.P1 <- bioacc(parameters.P1, C_water, tc, tsim)
 
 ggplot(simu.mean.P1, aes(time, conc)) +
   geom_line(col = "orange", linewidth = 1.5) +
-  xlab("Time (hours)") +
+  xlab("Time (days)") +
   ylab("Internal predicted concentrations") +
   geom_vline(xintercept = 1, linetype="dashed") +
   geom_point(data = df, aes(time, Cinternal)) +
@@ -153,20 +159,22 @@ intervals.para.P1 <- compute.intervals(X.para, tsim)
 ggplot(intervals.para.P1) +
   geom_line(aes(x=time, y=p50), col = "orange", linewidth = 1.5) +
   geom_ribbon(aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
-  xlab("Time (hours)") +
+  xlab("Time (days)") +
   ylab("Internal concentration") +
   geom_vline(xintercept = 1, linetype="dashed") +
   geom_point(data = df, aes(time, Cinternal)) +
   ggtitle("Perspective 1 - 90% parameter uncertainty interval")
 ```
 
-# Perspective 2: Maximum Likelihood Estimation (MLE)
+# Perspective 2: Maximum Likelihood Estimation
 We estimate the parameters by maximizing the likelihood of the observed data, 
-assuming normal- and gamma-distributed errors. 
+assuming a) normal- and b) gamma-distributed errors. 
+The normal distribution is a typical assumption, but it can lead to negative 
+parameter values. The gamma distribution ensures that the parameters are positive.
 We then run the model using these MLE parameters and apply bootstrapping to 
 propagate uncertainty.
 
-## *MLE with Normal-distributed errors
+### *a) MLE with Normal-distributed errors
 
 ```{r}
 log.ll.normal <- function(theta, data, LOQ=6) {
@@ -186,14 +194,14 @@ simu.mle.P2.n <- bioacc(parameters.P2.n, C_water, tc, tsim)
 
 ggplot(simu.mle.P2.n, aes(time, conc)) +
   geom_line(col = "orange", linewidth = 1.5) +
-  xlab("Time (hours)") +
+  xlab("Time (days)") +
   ylab("Internal predicted concentrations") +
   geom_vline(xintercept = 1, linetype="dashed") +
   geom_point(data = df, aes(time, Cinternal)) +
   ggtitle("MLE fit for normal errors")
 ```
 
-## *MLE with Gamma-distributed errors
+### *b) MLE with Gamma-distributed errors
 We repeat the above process for gamma-distributed errors to avoid that 
 concentrations can become negative.
 
@@ -218,7 +226,7 @@ simu.mle.P2.g <- bioacc(parameters.P2.g, C_water, tc, tsim)
 
 ggplot(simu.mle.P2.g, aes(time, conc)) +
   geom_line(col = "orange", linewidth = 1.5) +
-  xlab("Time (hours)") +
+  xlab("Time (days)") +
   ylab("Internal predicted concentrations") +
   geom_vline(xintercept = 1, linetype="dashed") +
   geom_point(data = df, aes(time, Cinternal)) +
@@ -233,7 +241,7 @@ avoids these approximations and also offers a straightforward way to
 propagate parameter uncertainty through the model to compute
 confidence intervals for predictions.
 
-### *Normal-distributed errors
+### *a) Normal-distributed errors
 
 ```{r}
 # run non-parametric bootstrap
@@ -273,14 +281,14 @@ ggplot() +
   geom_ribbon(data=intervals.total.P2.n, aes(x=time, y=p50, ymin=p05, ymax=p95), fill = gray(0.75)) +
   geom_ribbon(data=intervals.para.P2.n, aes(x=time, y=p50, ymin=p05, ymax=p95), fill = gray(0.6)) +
   geom_line(data = simu.mle.P2.n, aes(time, conc), col = "orange", linewidth = 1.5) +
-  xlab("Time (hours)") +
+  xlab("Time (days)") +
   ylab("Internal concentration") +
   geom_vline(xintercept = 1, linetype="dashed") +
   geom_point(data = df, aes(time, Cinternal)) +
   ggtitle("Bootstrapped 90% confidence and prediction intervals with normal errors")
 ```
 
-### *Gamma-distributed errors
+### *b) Gamma-distributed errors
 
 Again, we repeat the same procedure for the likelihood function based
 on the gamma distribution.
@@ -325,7 +333,7 @@ ggplot() +
   geom_ribbon(data=intervals.total.P2.g, aes(x=time, y=p50, ymin=p05, ymax=p95), fill = gray(0.75)) +
   geom_ribbon(data=intervals.para.P2.g, aes(x=time, y=p50, ymin=p05, ymax=p95), fill = gray(0.6)) +
   geom_line(data = simu.mle.P2.g, aes(time, conc), col = "orange", linewidth = 1.5) +
-  xlab("Time (hours)") +
+  xlab("Time (days)") +
   ylab("Internal concentration") +
   geom_vline(xintercept = 1, linetype="dashed") +
   geom_point(data = df, aes(time, Cinternal)) +
@@ -336,7 +344,9 @@ ggplot() +
 
 # Perspective 3: Bayesian Inference
 
-We incorporate prior knowledge into the model using a Bayesian approach, which allows us to sample from the posterior distribution of the parameters and estimate the uncertainty in our predictions.
+We incorporate prior knowledge into the model using a Bayesian approach, 
+which allows us to sample from the posterior distribution of the parameters 
+and estimate the uncertainty in our predictions.
 
 ## *Prior Definition
 
@@ -358,7 +368,8 @@ log.prior <- function(theta) {
 
 ## *Posterior Distribution
 
-We define functions proportional to the posterior distribution, incorporating both likelihood and prior information.
+We define functions proportional to the posterior distribution, incorporating 
+both likelihood and prior information.
 
 ```{r}
 log.post.normal <- function(theta, data, ...) {
@@ -372,7 +383,8 @@ log.post.gamma <- function(theta, data, ...) {
 
 ## *MCMC Sampling
 
-We sample from the posterior distribution using a Markov chain Monte Carlo (MCMC) method. This helps us quantify the uncertainty in the model predictions.
+We sample from the posterior distribution using a Markov chain Monte Carlo (MCMC) 
+method. This allows us quantify the uncertainty in the model predictions.
 
 ```{r}
 pp.normal <- MCMC(log.post.normal, n=15000,
@@ -405,7 +417,8 @@ pairs(pp.gamma$samples[5000:15000,], col=gray(0, alpha=0.02))
 
 ## *Credible and Posterior Prediction Intervals
 
-Finally, we plot the 90% credible intervals for normal and gamma errors, incorporating both parameter and total uncertainty.
+Finally, we plot the 90% credible intervals for normal and gamma errors, 
+incorporating both parameter and total uncertainty.
 
 ```{r}
 n <- 10000
@@ -425,7 +438,7 @@ ggplot(intervals.para.P3.n) +
   geom_line(aes(x=time, y=p50), col = "orange", linewidth = 1.5) +
   geom_ribbon(aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
   geom_ribbon(data=intervals.total.P3.n, aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
-  xlab("Time (hours)") +
+  xlab("Time (days)") +
   ylab("Internal concentration") +
   geom_vline(xintercept = 1, linetype="dashed") +
   geom_point(data = df, aes(time, Cinternal)) +
@@ -450,21 +463,21 @@ ggplot(intervals.para.P3.g) +
   geom_line(aes(x=time, y=p50), col = "orange", linewidth = 1.5) +
   geom_ribbon(aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
   geom_ribbon(data=intervals.total.P3.g, aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
-  xlab("Time (hours)") +
+  xlab("Time (days)") +
   ylab("Internal concentration") +
   geom_vline(xintercept = 1, linetype="dashed") +
   geom_point(data = df, aes(time, Cinternal)) +
   ggtitle("Bayesian 90% parameter and total uncertainty interval with gamma errors")
 ```
 
-## Compare Parameters
+# Compare Parameters
 
 For Perspective 3, we can see how much we have learned from the data by
-comparing the prior and the posterior distributions. Note that, strictly
-speaking, the bootstrap distribution cannot be compared to the
+comparing the Bayesian prior and the posterior distributions. Note that, strictly
+speaking, the bootstrap distribution from P2 cannot be directly compared to the
 prior. The prior represents (inter-)subjective prior knowledge,
 whereas the bootstrap reflects the distribution of the Frequentist
-estimator of the parameter.
+estimator of the parameter. We show it here for illustration. 
 
 ```{r}
 ## Define density of prior distributions for the parameters separately
@@ -481,7 +494,7 @@ d.ke <- function(theta) dlnorm(theta, meanlog.k.e, sdlog, log=F)
 ```
 
 
-## *Normal-distributed errors
+### *a) Normal-distributed errors
 
 ```{r}
 par(mfrow=c(2,2))
@@ -510,7 +523,7 @@ lines(ke.plt, d.ke(ke.plt), type="l", col="red", lwd=2)
 ```
 
 
-## *Gamma-distributed errors
+### *b) Gamma-distributed errors
 
 ```{r}
 par(mfrow=c(2,2))
@@ -538,20 +551,19 @@ hist(pp.gamma$samples[5000:15000,"k.e"],  xlim=c(0, 3),
 lines(ke.plt, d.ke(ke.plt), type="l", col="red", lwd=2)
 ```
 
-## Plots for paper
+# Plots for paper
 ```{r}
 
 # P1
 P1 <- ggplot(intervals.para.P1) +
   geom_ribbon(aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
   geom_line(aes(x=time, y=p50), col = "orange", linewidth = 1.5) +
-  xlab("Time (hours)") +
-  ylab("Internal concentration") +
+  xlab("Time (days)") +
+  ylab("Internal concentration (picomol/g wet weight)") +
   geom_vline(xintercept = 1, linetype="dashed") +
   geom_point(data = df, aes(time, Cinternal)) +
   ggtitle("P1 Propagating prior knowledge") +
-  theme(plot.title = element_text(size = 11)) #+
-#  scale_y_log10()
+  theme(plot.title = element_text(size = 11))
   
 # P2
 P2 <- ggplot(intervals.para.P2.g) +
@@ -559,12 +571,12 @@ P2 <- ggplot(intervals.para.P2.g) +
   geom_ribbon(data=intervals.total.P2.g, aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
   geom_line(data = simu.mle.P2.g, aes(time, conc), col = "red", linewidth = 1.5) +
   geom_line(aes(x=time, y=p50), col = "orange", linewidth = 1.5) +
-  xlab("Time (hours)") +
-  ylab("Internal concentration") +
+  xlab("Time (days)") +
+  ylab("Internal concentration (picomol/g wet weight)") +
   geom_vline(xintercept = 1, linetype="dashed") +
   geom_point(data = df, aes(time, Cinternal)) +
   ggtitle("P2 Calibration from data") +
- theme(plot.title = element_text(size = 11))
+  theme(plot.title = element_text(size = 11))
 
 # P3
 P3 <- ggplot(intervals.para.P3.g) +
@@ -572,14 +584,18 @@ P3 <- ggplot(intervals.para.P3.g) +
   geom_ribbon(data=intervals.total.P3.g, aes(x=time, y=p50, ymin=p05, ymax=p95), alpha = 0.2) +
   geom_line(data = simu.map.P3.g, aes(time, conc), col = "red", linewidth = 1.5) +
   geom_line(aes(x=time, y=p50), col = "orange", linewidth = 1.5) +
-  xlab("Time (hours)") +
-  ylab("Internal concentration") +
+  xlab("Time (days)") +
+  ylab("Internal concentration (picomol/g wet weight)") +
   geom_vline(xintercept = 1, linetype="dashed") +
   geom_point(data = df, aes(time, Cinternal)) +
   ggtitle("P3 Calibration with prior knowledge") +
- theme(plot.title = element_text(size = 11))
+  theme(plot.title = element_text(size = 11))
 
 combined_plot <- P1 | P2 | P3
+
+combined_plot
+
+P1+scale_y_log10() 
 
 # Save to PDF
 ggsave("Box1_Figure.pdf", combined_plot, width = 12, height = 4)
